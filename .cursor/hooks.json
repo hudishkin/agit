@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "./.cursor/hooks/agit-guard.sh",
+        "matcher": "git|gh",
+        "failClosed": true
+      }
+    ]
+  }
+}

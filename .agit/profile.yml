@@ -1,0 +1,33 @@
+repo:
+  default_branch: main
+  url: git@github.com:hudishkin/agit.git
+  owner: hudishkin
+  name: agit
+workflow:
+  branch_prefix: agit/
+  require_clean_tree_on_start: true
+  allow_direct_push: false
+  allow_force_push: false
+  finish_mode: draft_pr
+  squash_on_finish: false
+  one_push_policy: true
+checks: []
+checks_timeout_sec: 900
+commit:
+  scope: all
+  denylist:
+    - .env
+    - .env.*
+    - credentials.json
+    - '*.pem'
+    - '*.p12'
+  allowlist:
+    - '*.example'
+    - '*.sample'
+    - '*.template'
+    - '*.dist'
+  scan_contents: true
+pr:
+  draft: true
+  title_template: '{task_id}: {summary}'
+  base: main
