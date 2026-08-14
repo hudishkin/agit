@@ -110,7 +110,7 @@ Not for: workflows where the agent is never allowed to touch Git; hosted agents 
 ## What agit does not do
 
 - It does not run agents, replace GitHub, or hide a merge queue.
-- It does not sandbox the agent or hold a separate credential. `agit isolate` stops `git push origin` and `git push "$(git remote get-url origin)"`. It does not stop `git push git@github.com:…` or `git push "$(git config --get agit.pushUrl)"`.
+- It does not sandbox the agent or hold a separate credential. The guard blocks `git push` (including a literal URL), mutating `curl`/`wget` to `api.github.com`, and reading `agit.pushUrl` in an isolated clone. A process that skips the guard and already has a URL can still push.
 - It does not defend against a hostile agent. It reduces the cost of an unreliable one.
 - It does not resolve conflicts. On conflict, it stops and asks a human.
 
@@ -178,7 +178,7 @@ commit:
   scan_contents: true     # also scan file contents for credentials
 ```
 
-`enforcement: remote` lets the agent use local git and blocks publish (`git push`, mutating `gh`). A human runs `agit finish`. Existing profiles without this key stay on `protocol`, where git mutations go through `agit start` / `commit` / `finish`. `agit init --yes --mode protocol` keeps that workflow. `patch` denies local commits too.
+`enforcement: remote` lets the agent use local git and blocks publish (`git push`, mutating `gh`/`curl`, `agit finish`). A human runs `agit finish` in their own terminal. Existing profiles without this key stay on `protocol`, where git mutations go through `agit start` / `commit` / `finish`. `agit init --yes --mode protocol` keeps that workflow. `patch` denies local commits too.
 
 `scope: all` stages everything that changed, which is usually what an agent means, and always prints the full list. Set `scope: explicit` if you would rather have the agent name the files with `agit commit --files a.ts b.ts`.
 

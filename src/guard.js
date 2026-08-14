@@ -46,7 +46,25 @@ const READONLY_CONFIG_FLAGS = new Set(["--get", "--get-all", "--get-regexp", "--
 // Global git options that consume the following token as their value.
 const GIT_GLOBAL_WITH_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix"]);
 
-const GH_MUTATING_PR = new Set(["create", "merge", "ready", "close", "reopen", "edit"]);
+const GH_MUTATING = new Map([
+  ["pr", new Set(["create", "merge", "ready", "close", "reopen", "edit"])],
+  ["release", new Set(["create", "delete", "upload", "edit"])],
+  ["repo", new Set(["delete", "archive", "edit", "rename"])],
+]);
+
+const HTTP_MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const CURL_BODY_FLAGS = new Set([
+  "-d",
+  "--data",
+  "--data-raw",
+  "--data-binary",
+  "--data-ascii",
+  "--data-urlencode",
+  "-F",
+  "--form",
+  "--form-string",
+  "--json",
+]);
 
 export function tokenize(segment) {
   const tokens = [];
@@ -108,25 +126,27 @@ const ALLOW = { decision: "allow", reason: null, hint: null };
 
 function optionsOf(options) {
   if (typeof options === "number") {
-    return { depth: options, enforcement: "protocol" };
+    return { depth: options, enforcement: "protocol", isolated: false };
   }
   return {
     depth: options?.depth ?? 0,
     enforcement: options?.enforcement === "remote" ? "remote" : "protocol",
+    isolated: Boolean(options?.isolated),
   };
 }
 
+function publishHint(enforcement) {
+  return enforcement === "remote" ? REMOTE_PUSH_HINT : "Run: agit finish <task-id>.";
+}
+
 export function classifyCommand(command, options = {}) {
-  const { depth, enforcement } = optionsOf(options);
+  const { depth, enforcement, isolated } = optionsOf(options);
   if (typeof command !== "string" || !command.trim()) {
     return ALLOW;
   }
 
   if (/agit-allow-push/.test(command)) {
-    return denial(
-      "Tampering with the agit push token is not allowed.",
-      enforcement === "remote" ? REMOTE_PUSH_HINT : "Run: agit finish <task-id>",
-    );
+    return denial("Tampering with the agit push token is not allowed.", publishHint(enforcement));
   }
 
   for (const segment of segments(command)) {
@@ -134,7 +154,7 @@ export function classifyCommand(command, options = {}) {
 
     const gitIndex = findProgram(tokens, "git");
     if (gitIndex !== -1) {
-      const verdict = classifyGit(tokens, gitIndex, enforcement);
+      const verdict = classifyGit(tokens, gitIndex, enforcement, isolated);
       if (verdict.decision === "deny") {
         return verdict;
       }
@@ -148,13 +168,37 @@ export function classifyCommand(command, options = {}) {
       }
     }
 
+    const curlIndex = findProgram(tokens, "curl");
+    if (curlIndex !== -1) {
+      const verdict = classifyCurl(tokens, curlIndex, enforcement);
+      if (verdict.decision === "deny") {
+        return verdict;
+      }
+    }
+
+    const wgetIndex = findProgram(tokens, "wget");
+    if (wgetIndex !== -1) {
+      const verdict = classifyWget(tokens, wgetIndex, enforcement);
+      if (verdict.decision === "deny") {
+        return verdict;
+      }
+    }
+
+    const agitIndex = tokens.findIndex(isAgitBinary);
+    if (agitIndex !== -1) {
+      const verdict = classifyAgit(tokens, agitIndex, enforcement);
+      if (verdict.decision === "deny") {
+        return verdict;
+      }
+    }
+
     // sh -c "git push" hides the real command inside one quoted token.
     if (depth < 3) {
       for (const token of tokens) {
         if (!/\s/.test(token)) {
           continue;
         }
-        const verdict = classifyCommand(token, { depth: depth + 1, enforcement });
+        const verdict = classifyCommand(token, { depth: depth + 1, enforcement, isolated });
         if (verdict.decision === "deny") {
           return verdict;
         }
@@ -188,8 +232,26 @@ function classifyRemoteGit(name, args, tokens) {
   return ALLOW;
 }
 
-function classifyGit(tokens, gitIndex, enforcement) {
+function readsPushUrl(args) {
+  if (args.some((arg) => arg === "agit.pushUrl" || arg.endsWith(".agit.pushUrl"))) {
+    return true;
+  }
+  const regexpAt = args.findIndex((arg) => arg === "--get-regexp");
+  if (regexpAt === -1) {
+    return false;
+  }
+  return /agit|pushUrl/i.test(args[regexpAt + 1] ?? "");
+}
+
+function classifyGit(tokens, gitIndex, enforcement, isolated) {
   const { name, args } = subcommandOf(tokens, gitIndex);
+
+  if (name === "config" && isolated && readsPushUrl(args)) {
+    return denial(
+      "The publish URL is not visible to the agent.",
+      "A human publishes with agit finish <task-id>.",
+    );
+  }
 
   if (enforcement === "remote") {
     return classifyRemoteGit(name, args, tokens);
@@ -269,20 +331,93 @@ function classifyGhApi(args, hint) {
 }
 
 function classifyGh(tokens, ghIndex, enforcement) {
-  const hint =
-    enforcement === "remote"
-      ? REMOTE_PUSH_HINT
-      : "Run: agit finish <task-id>. A human reviews and merges the draft PR.";
+  const hint = publishHint(enforcement);
   const { name, args } = subcommandOf(tokens, ghIndex);
   if (name === "api") {
     return classifyGhApi(args, hint);
   }
-  if (name !== "pr") {
+  const mutating = GH_MUTATING.get(name);
+  if (!mutating) {
     return ALLOW;
   }
   const action = args.find((arg) => !arg.startsWith("-"));
-  if (action && GH_MUTATING_PR.has(action)) {
-    return denial(`gh pr ${action} is managed by agit in this repository.`, hint);
+  if (action && mutating.has(action)) {
+    return denial(`gh ${name} ${action} is managed by agit in this repository.`, hint);
+  }
+  return ALLOW;
+}
+
+function looksLikeGithubApi(token) {
+  return /api\.github\.com/i.test(token);
+}
+
+function httpMethodFromFlags(args, { methodFlags, bodyFlags, inlinePrefix }) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (methodFlags.has(arg)) {
+      return (args[index + 1] ?? "").toUpperCase();
+    }
+    if (inlinePrefix && arg.startsWith(inlinePrefix) && arg.length > inlinePrefix.length) {
+      return arg.slice(inlinePrefix.length).toUpperCase();
+    }
+    if (arg.startsWith("--method=")) {
+      return arg.slice("--method=".length).toUpperCase();
+    }
+    if (arg.startsWith("--request=")) {
+      return arg.slice("--request=".length).toUpperCase();
+    }
+  }
+  if (args.some((arg) => bodyFlags.has(arg.split("=")[0]))) {
+    return "POST";
+  }
+  return "GET";
+}
+
+function classifyHttpToGithub(args, method, enforcement) {
+  if (!args.some(looksLikeGithubApi)) {
+    return ALLOW;
+  }
+  if (!HTTP_MUTATING.has(method)) {
+    return ALLOW;
+  }
+  return denial("Mutating HTTP to GitHub is blocked.", publishHint(enforcement));
+}
+
+function classifyCurl(tokens, curlIndex, enforcement) {
+  const args = tokens.slice(curlIndex + 1);
+  const method = httpMethodFromFlags(args, {
+    methodFlags: new Set(["-X", "--request"]),
+    bodyFlags: CURL_BODY_FLAGS,
+    inlinePrefix: "-X",
+  });
+  return classifyHttpToGithub(args, method, enforcement);
+}
+
+function classifyWget(tokens, wgetIndex, enforcement) {
+  const args = tokens.slice(wgetIndex + 1);
+  const method = httpMethodFromFlags(args, {
+    methodFlags: new Set(["--method"]),
+    bodyFlags: new Set(["--post-data", "--post-file"]),
+    inlinePrefix: null,
+  });
+  return classifyHttpToGithub(args, method, enforcement);
+}
+
+function isAgitBinary(token) {
+  const bare = token.replace(/\.exe$/i, "");
+  return bare === "agit" || bare.endsWith("/agit") || bare === "agit.js" || bare.endsWith("/agit.js");
+}
+
+function classifyAgit(tokens, agitIndex, enforcement) {
+  if (enforcement !== "remote") {
+    return ALLOW;
+  }
+  const { name } = subcommandOf(tokens, agitIndex);
+  if (name === "finish") {
+    return denial(
+      "agit finish is not allowed for the agent in remote mode.",
+      "A human runs agit finish <task-id> in their own terminal.",
+    );
   }
   return ALLOW;
 }

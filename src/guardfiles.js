@@ -31,12 +31,16 @@ export const CLAUDE_DENY_RULES_PROTOCOL = [
 export const CLAUDE_DENY_RULES_REMOTE = [
   "Bash(git push:*)",
   "Bash(git reset --hard:*)",
+  "Bash(agit finish:*)",
+  "Bash(npx agit finish:*)",
   "Bash(gh pr create:*)",
   "Bash(gh pr merge:*)",
   "Bash(gh pr ready:*)",
   "Bash(gh pr close:*)",
   "Bash(gh pr reopen:*)",
   "Bash(gh pr edit:*)",
+  "Bash(gh release create:*)",
+  "Bash(gh repo delete:*)",
 ];
 
 export const CLAUDE_DENY_RULES = CLAUDE_DENY_RULES_PROTOCOL;

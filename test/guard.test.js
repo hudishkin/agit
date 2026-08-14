@@ -89,6 +89,9 @@ describe("guard", () => {
     assert.equal(decide("gh pr merge 4 --squash"), "deny");
     assert.equal(decide("gh pr list"), "allow");
     assert.equal(decide("gh pr view 4"), "allow");
+    assert.equal(decide("gh release create v1"), "deny");
+    assert.equal(decide("gh repo delete acme/x"), "deny");
+    assert.equal(decide("gh repo view acme/x"), "allow");
   });
 
   test("denies fetch refspecs that can move local branches", () => {
@@ -121,14 +124,47 @@ describe("guard", () => {
     for (const command of [
       "git push",
       "git push origin main",
+      "git push git@github.com:acme/x.git HEAD:main",
       "git reset --hard HEAD",
       "git push --no-verify",
       "git commit -m x && git push",
       "gh pr create --fill",
       "gh api --method POST repos/acme/x/pulls",
+      "gh release create v1.0.0",
+      "gh repo delete acme/x",
+      "agit finish AUTH-1",
+      "npx agit finish AUTH-1",
     ]) {
       assert.equal(classifyCommand(command, remote).decision, "deny", command);
     }
+  });
+
+  test("blocks mutating HTTP to api.github.com", () => {
+    for (const command of [
+      "curl -X POST https://api.github.com/repos/acme/x/contents/app.js",
+      "curl --request PUT https://api.github.com/repos/acme/x/git/refs/heads/main",
+      "curl -d '{\"a\":1}' https://api.github.com/repos/acme/x/contents/x",
+      "wget --method=POST https://api.github.com/repos/acme/x/git/blobs",
+      "wget --post-data=x https://api.github.com/user/repos",
+    ]) {
+      assert.equal(decide(command), "deny", command);
+    }
+    for (const command of [
+      "curl https://api.github.com/repos/acme/x",
+      "curl --method GET https://api.github.com/user",
+      "curl -X POST https://example.com/hook",
+      "wget https://api.github.com/repos/acme/x",
+    ]) {
+      assert.equal(decide(command), "allow", command);
+    }
+  });
+
+  test("hides agit.pushUrl from the agent when the clone is isolated", () => {
+    const isolated = { isolated: true };
+    assert.equal(classifyCommand("git config --get agit.pushUrl", isolated).decision, "deny");
+    assert.equal(classifyCommand("git config --get-regexp agit", isolated).decision, "deny");
+    assert.equal(classifyCommand("git config --get user.email", isolated).decision, "allow");
+    assert.equal(decide("git config --get agit.pushUrl"), "allow");
   });
 
   test("allows an empty or unknown payload", () => {
