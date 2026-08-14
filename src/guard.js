@@ -29,6 +29,10 @@ const GIT_HINTS = {
 
 const MUTATING_GIT = new Set(Object.keys(GIT_HINTS));
 
+const REMOTE_PUSH_HINT = "A human publishes with agit finish <task-id>.";
+const REMOTE_FOOTER = "Local git is allowed. Do not push or create pull requests.";
+const PROTOCOL_FOOTER = "Read-only git is allowed: git status, git diff, git log.";
+
 // Subcommands that mutate only when given more than a listing flag.
 const LISTABLE_GIT = new Map([
   ["branch", new Set(["-l", "--list", "-v", "-vv", "-a", "--all", "-r", "--remotes", "--show-current", "--merged", "--no-merged", "--contains", "--points-at", "--format", "--sort", "--color", "--no-color"])],
@@ -102,7 +106,18 @@ function denial(reason, hint) {
 
 const ALLOW = { decision: "allow", reason: null, hint: null };
 
-export function classifyCommand(command, depth = 0) {
+function optionsOf(options) {
+  if (typeof options === "number") {
+    return { depth: options, enforcement: "protocol" };
+  }
+  return {
+    depth: options?.depth ?? 0,
+    enforcement: options?.enforcement === "remote" ? "remote" : "protocol",
+  };
+}
+
+export function classifyCommand(command, options = {}) {
+  const { depth, enforcement } = optionsOf(options);
   if (typeof command !== "string" || !command.trim()) {
     return ALLOW;
   }
@@ -110,7 +125,7 @@ export function classifyCommand(command, depth = 0) {
   if (/agit-allow-push/.test(command)) {
     return denial(
       "Tampering with the agit push token is not allowed.",
-      "Run: agit finish <task-id>",
+      enforcement === "remote" ? REMOTE_PUSH_HINT : "Run: agit finish <task-id>",
     );
   }
 
@@ -119,7 +134,7 @@ export function classifyCommand(command, depth = 0) {
 
     const gitIndex = findProgram(tokens, "git");
     if (gitIndex !== -1) {
-      const verdict = classifyGit(tokens, gitIndex);
+      const verdict = classifyGit(tokens, gitIndex, enforcement);
       if (verdict.decision === "deny") {
         return verdict;
       }
@@ -127,7 +142,7 @@ export function classifyCommand(command, depth = 0) {
 
     const ghIndex = findProgram(tokens, "gh");
     if (ghIndex !== -1) {
-      const verdict = classifyGh(tokens, ghIndex);
+      const verdict = classifyGh(tokens, ghIndex, enforcement);
       if (verdict.decision === "deny") {
         return verdict;
       }
@@ -139,7 +154,7 @@ export function classifyCommand(command, depth = 0) {
         if (!/\s/.test(token)) {
           continue;
         }
-        const verdict = classifyCommand(token, depth + 1);
+        const verdict = classifyCommand(token, { depth: depth + 1, enforcement });
         if (verdict.decision === "deny") {
           return verdict;
         }
@@ -150,8 +165,35 @@ export function classifyCommand(command, depth = 0) {
   return ALLOW;
 }
 
-function classifyGit(tokens, gitIndex) {
+function classifyRemoteGit(name, args, tokens) {
+  if (tokens.includes("--no-verify")) {
+    return denial("Skipping git hooks is not allowed.", "Do not pass --no-verify.");
+  }
+
+  if (name === "config") {
+    const readOnly = args.some((arg) => READONLY_CONFIG_FLAGS.has(arg.split("=")[0]));
+    return readOnly
+      ? ALLOW
+      : denial("Changing git config is not allowed.", "Ask the human to change git config.");
+  }
+
+  if (name === "push") {
+    return denial("git push is blocked in this repository.", REMOTE_PUSH_HINT);
+  }
+
+  if (name === "reset" && args.some((arg) => arg === "--hard" || arg.startsWith("--hard="))) {
+    return denial("git reset --hard is not allowed.", "Do not destroy the working tree.");
+  }
+
+  return ALLOW;
+}
+
+function classifyGit(tokens, gitIndex, enforcement) {
   const { name, args } = subcommandOf(tokens, gitIndex);
+
+  if (enforcement === "remote") {
+    return classifyRemoteGit(name, args, tokens);
+  }
 
   if (tokens.includes("--no-verify")) {
     return denial("Skipping git hooks is not allowed.", "Run: agit finish <task-id>");
@@ -206,7 +248,7 @@ function isRefspec(arg) {
   return true;
 }
 
-function classifyGhApi(args) {
+function classifyGhApi(args, hint) {
   const methodAt = args.findIndex((arg) => arg === "--method" || arg === "-X");
   const method = methodAt !== -1 ? (args[methodAt + 1] ?? "").toUpperCase() : null;
   const isGraphql = args.some((arg) => arg === "graphql" || arg.startsWith("graphql/"));
@@ -223,42 +265,44 @@ function classifyGhApi(args) {
   if (effective === "GET" || effective === "HEAD") {
     return ALLOW;
   }
-  return denial(
-    "gh api mutations are managed by agit in this repository.",
-    "Run: agit finish <task-id>. A human reviews and merges the draft PR.",
-  );
+  return denial("gh api mutations are managed by agit in this repository.", hint);
 }
 
-function classifyGh(tokens, ghIndex) {
+function classifyGh(tokens, ghIndex, enforcement) {
+  const hint =
+    enforcement === "remote"
+      ? REMOTE_PUSH_HINT
+      : "Run: agit finish <task-id>. A human reviews and merges the draft PR.";
   const { name, args } = subcommandOf(tokens, ghIndex);
   if (name === "api") {
-    return classifyGhApi(args);
+    return classifyGhApi(args, hint);
   }
   if (name !== "pr") {
     return ALLOW;
   }
   const action = args.find((arg) => !arg.startsWith("-"));
   if (action && GH_MUTATING_PR.has(action)) {
-    return denial(
-      `gh pr ${action} is managed by agit in this repository.`,
-      "Run: agit finish <task-id>. A human reviews and merges the draft PR.",
-    );
+    return denial(`gh pr ${action} is managed by agit in this repository.`, hint);
   }
   return ALLOW;
 }
 
-export function cursorResponse(verdict) {
+function footerFor(enforcement) {
+  return enforcement === "remote" ? REMOTE_FOOTER : PROTOCOL_FOOTER;
+}
+
+export function cursorResponse(verdict, enforcement = "protocol") {
   if (verdict.decision === "allow") {
     return { permission: "allow" };
   }
   return {
     permission: "deny",
     user_message: `agit blocked: ${verdict.reason}`,
-    agent_message: `${verdict.reason}\n${verdict.hint}\nRead-only git is allowed: git status, git diff, git log.`,
+    agent_message: `${verdict.reason}\n${verdict.hint}\n${footerFor(enforcement)}`,
   };
 }
 
-export function claudeResponse(verdict) {
+export function claudeResponse(verdict, enforcement = "protocol") {
   if (verdict.decision === "allow") {
     return null;
   }
@@ -266,7 +310,7 @@ export function claudeResponse(verdict) {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
-      permissionDecisionReason: `${verdict.reason}\n${verdict.hint}\nRead-only git is allowed: git status, git diff, git log.`,
+      permissionDecisionReason: `${verdict.reason}\n${verdict.hint}\n${footerFor(enforcement)}`,
     },
   };
 }

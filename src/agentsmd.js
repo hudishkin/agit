@@ -3,10 +3,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MARKER_END, MARKER_START } from "./paths.js";
 
-const SECTION_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "templates", "agents-section.md");
+const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "templates");
 
-export function loadAgentsSection() {
-  return readFileSync(SECTION_PATH, "utf8").replace(/\s*$/, "\n");
+const SECTION_FILES = {
+  remote: "agents-section-remote.md",
+  protocol: "agents-section.md",
+  patch: "agents-section.md",
+};
+
+export function loadAgentsSection(enforcement = "protocol") {
+  const file = SECTION_FILES[enforcement] ?? SECTION_FILES.protocol;
+  return readFileSync(join(TEMPLATES_DIR, file), "utf8").replace(/\s*$/, "\n");
 }
 
 export function mergeAgentsMd(existing, section = loadAgentsSection()) {
@@ -26,10 +33,10 @@ export function mergeAgentsMd(existing, section = loadAgentsSection()) {
   return `${existing.replace(/\n*$/, "\n")}\n${section}`;
 }
 
-export function writeAgentsMd(cwd, existing) {
+export function writeAgentsMd(cwd, existing, enforcement = "protocol") {
   const path = join(cwd, "AGENTS.md");
   const current = existing ?? (existsSync(path) ? readFileSync(path, "utf8") : "");
-  writeFileSync(path, mergeAgentsMd(current, loadAgentsSection()));
+  writeFileSync(path, mergeAgentsMd(current, loadAgentsSection(enforcement)));
   return path;
 }
 

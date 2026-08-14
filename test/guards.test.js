@@ -66,7 +66,31 @@ describe("install-agent-guards", () => {
     assert.ok(group, "Bash matcher is missing");
     assert.ok(group.hooks.some((item) => item.command === CLAUDE_HOOK_COMMAND));
     assert.ok(config.permissions.deny.includes("Bash(git push:*)"));
+    assert.ok(config.permissions.deny.includes("Bash(git commit:*)"));
     assert.match(readFileSync(join(work, ".claude/hooks/agit-guard.sh"), "utf8"), /guard --vendor claude/);
+  });
+
+  test("remote enforcement writes a narrower Claude deny list", async () => {
+    const { work } = repo();
+
+    await installAgentGuardsCommand(work, { claude: true, enforcement: "remote" });
+
+    const config = readJson(join(work, ".claude/settings.json"));
+    assert.ok(config.permissions.deny.includes("Bash(git push:*)"));
+    assert.ok(config.permissions.deny.includes("Bash(git reset --hard:*)"));
+    assert.equal(config.permissions.deny.includes("Bash(git commit:*)"), false);
+    assert.match(readFileSync(join(work, "CLAUDE.md"), "utf8"), /Local Git is allowed/);
+  });
+
+  test("switching to remote removes protocol-only Claude deny rules", async () => {
+    const { work } = repo();
+
+    await installAgentGuardsCommand(work, { claude: true, enforcement: "protocol" });
+    await installAgentGuardsCommand(work, { claude: true, enforcement: "remote" });
+
+    const config = readJson(join(work, ".claude/settings.json"));
+    assert.equal(config.permissions.deny.includes("Bash(git commit:*)"), false);
+    assert.ok(config.permissions.deny.includes("Bash(git push:*)"));
   });
 
   test("keeps existing hook entries and instruction text", async () => {

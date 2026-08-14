@@ -142,7 +142,7 @@ That restores `origin` to the real remote. The mirror directory is kept.
 ## Commands
 
 ```text
-agit init                   Prepare this repository
+agit init [--mode remote]   Prepare this repository (remote = local git, no publish)
 agit start <task-id>        Create or resume a task branch
 agit commit -m "..."        Local commit, never a push
 agit commit --files a b     Commit only these paths
@@ -164,6 +164,9 @@ Every command accepts `--json` so agents do not have to parse human output.
 `.agit/profile.yml`, the parts worth knowing:
 
 ```yaml
+workflow:
+  enforcement: remote     # new init default. protocol = current agit CLI workflow
+
 checks:
   - npm test
 checks_timeout_sec: 900   # a hanging check fails instead of hanging finish
@@ -174,6 +177,8 @@ commit:
   allowlist: ["*.example", "*.sample", "*.template", "*.dist"]
   scan_contents: true     # also scan file contents for credentials
 ```
+
+`enforcement: remote` lets the agent use local git and blocks publish (`git push`, mutating `gh`). A human runs `agit finish`. Existing profiles without this key stay on `protocol`, where git mutations go through `agit start` / `commit` / `finish`. `agit init --yes --mode protocol` keeps that workflow. `patch` denies local commits too.
 
 `scope: all` stages everything that changed, which is usually what an agent means, and always prints the full list. Set `scope: explicit` if you would rather have the agent name the files with `agit commit --files a.ts b.ts`.
 

@@ -8,14 +8,24 @@ import {
   writeCursorHooks,
   writeGuardScript,
 } from "../guardfiles.js";
+import { enforcementOf, loadProfile, profileExists } from "../profile.js";
+
+function enforcementFor(cwd, override) {
+  if (override) {
+    return override;
+  }
+  if (!profileExists(cwd)) {
+    return "protocol";
+  }
+  return enforcementOf(loadProfile(cwd));
+}
 
 const CURSOR_RULE = ".cursor/rules/agit.mdc";
 const CLAUDE_FILE = "CLAUDE.md";
 const COPILOT_FILE = ".github/copilot-instructions.md";
 
-function writeCursorRule(cwd) {
+function writeCursorRule(cwd, section) {
   const path = join(cwd, CURSOR_RULE);
-  const section = loadAgentsSection();
   const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
   mkdirSync(dirname(path), { recursive: true });
   if (!existing.trim()) {
@@ -36,22 +46,24 @@ export async function installAgentGuardsCommand(cwd, options = {}) {
     cursor: none || Boolean(options.cursor),
     copilot: none || Boolean(options.copilot),
   };
+  const enforcement = enforcementFor(cwd, options.enforcement);
+  const section = loadAgentsSection(enforcement);
 
   const files = [];
   const guards = [];
 
   if (want.claude) {
-    files.push(writeMarkedFile(cwd, CLAUDE_FILE));
+    files.push(writeMarkedFile(cwd, CLAUDE_FILE, section));
     guards.push(writeGuardScript(cwd, CLAUDE_GUARD_SCRIPT, "claude"));
-    guards.push(writeClaudeSettings(cwd));
+    guards.push(writeClaudeSettings(cwd, { enforcement }));
   }
   if (want.cursor) {
-    files.push(writeCursorRule(cwd));
+    files.push(writeCursorRule(cwd, section));
     guards.push(writeGuardScript(cwd, CURSOR_GUARD_SCRIPT, "cursor"));
     guards.push(writeCursorHooks(cwd));
   }
   if (want.copilot) {
-    files.push(writeMarkedFile(cwd, COPILOT_FILE));
+    files.push(writeMarkedFile(cwd, COPILOT_FILE, section));
   }
 
   const lines = [
