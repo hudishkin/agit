@@ -2,7 +2,7 @@
 
 **A boring, reviewable handoff between an AI coding agent and your Git remote.**
 
-The agent works with four commands instead of raw Git. You get one branch, one draft pull request, and a history you can read.
+The agent starts a task, commits locally, and finishes into one draft pull request. You get one branch, a history you can read, and a human still merges.
 
 ```bash
 agit start AUTH-123
@@ -15,13 +15,22 @@ agit finish AUTH-123
 
 AI coding agents are good at changing code and bad at Git.
 
-They push too early, push many times, skip tests, commit `.env` files, invent branch names, force-push, and sometimes push to `main`. A long `AGENTS.md` does not stop this. Agents forget rules, or ignore them "to be helpful."
+They push too early, open a second pull request for a follow-up, commit `.env` files, invent branch names, force-push, and sometimes push to `main`. A long `AGENTS.md` does not stop this. Agents forget rules, or ignore them "to be helpful."
 
 The result is noisy remotes, broken CI, dirty history, and pull requests a human cannot review.
 
+`AGENTS.md` is a hint. Agit still writes one — and, in Cursor and Claude Code, intercepts `git push` / `git commit` before the shell runs them:
+
+```text
+agit blocked: git push is managed by agit in this repository.
+Run: agit finish <task-id>
+```
+
+Without those hooks, you are back to instructions.
+
 ## What agit does
 
-`agit` is a small CLI protocol. The agent gets a short, boring interface, and Git mutations go through that interface instead of raw `git`.
+`agit` is a small CLI protocol. Git mutations go through that interface instead of raw `git`.
 
 | Command | What happens |
 | --- | --- |
@@ -32,19 +41,19 @@ The result is noisy remotes, broken CI, dirty history, and pull requests a human
 
 Read-only Git stays allowed: `git status`, `git diff`, `git log`.
 
-## Four layers, and what each one is worth
+## Why this is not an alias
 
-Enforcement is layered because no single layer is enough. `agit doctor` reports which layers are actually active in this clone, and says so plainly when one is missing.
+Agit makes the wrong thing inconvenient and the right thing the path of least resistance. `agit doctor` reports which layers are actually active in this clone, and says so plainly when one is missing.
 
-**Layer 1: GitHub rules (server-side).** Push to the default branch, force-push, and merges without review are blocked by a GitHub ruleset. This is the only layer a local agent cannot bypass. `agit protect` shows the ruleset; `agit protect --apply` creates it.
+**Layer 1: GitHub rules (server-side).** Push to the default branch, force-push, and merges without review are blocked by a GitHub ruleset. This is the only layer a local agent cannot bypass. `agit protect --apply` creates it.
 
-**Layer 2: agent tool-call guards.** `agit install-agent-guards` wires Cursor's `beforeShellExecution` and Claude Code's `PreToolUse` hooks to `agit guard`, which inspects the command **before the shell runs it**. This catches `git push --no-verify`, chained commands, and `sh -c "git push"`, and answers with a redirect: *use `agit commit -m ...`* rather than a bare refusal. The Cursor hook is installed fail-closed. For Claude Code, declarative `permissions.deny` rules back the hook up.
+**Layer 2: agent tool-call guards.** `init` wires Cursor's `beforeShellExecution` and Claude Code's `PreToolUse` hooks to `agit guard`. A blocked command gets a redirect, not a bare refusal. The Cursor hook is fail-closed. Claude Code also gets declarative `permissions.deny` rules.
 
-**Layer 3: git pre-push hook.** A raw `git push` fails unless `agit finish` issued a single-use token bound to the exact commit being pushed. The hook is installed at the path git actually uses, so it works alongside husky, and an existing `pre-push` hook is backed up rather than overwritten.
+**Layer 3: git pre-push hook.** A raw `git push` fails unless `agit finish` issued a single-use token bound to the exact commit being pushed. The hook is installed at the path git actually uses, so it works alongside husky. An existing `pre-push` hook is backed up, not overwritten.
 
-**Layer 4: the local mirror.** `agit isolate` rewrites `origin` to `.agit/mirror.git` for both fetch and push. `git push origin` and `git push "$(git remote get-url origin)"` stay on this machine. The real URL is stored in this clone's git config (`agit.pushUrl`), not in the tracked profile. `agit start` syncs the default branch from that URL before creating the task; `agit finish` publishes there. Isolation is opt-in and per-clone: it does not travel with the repository.
+**Layer 4: the local mirror (optional).** `agit isolate` points this clone's `origin` at `.agit/mirror.git`. Details below.
 
-So: agit makes the wrong thing inconvenient and the right thing the path of least resistance. Push to `main`, force-push, and dirty history are closed by layer 1, which is GitHub's job, not agit's.
+Push to `main`, force-push, and dirty history are closed by layer 1, which is GitHub's job, not agit's.
 
 ## Install
 
@@ -58,29 +67,21 @@ Or keep it in the repo so agents can find it with `npx`:
 
 ```bash
 npm i -D @hudishkin/agit
-npx agit init --yes
-```
-
-`init` writes `.agit/profile.yml`, merges an agit section into `AGENTS.md`, installs the pre-push hook and the agent guards, and adds Cursor / Claude / Copilot instruction files. It does not overwrite the rest of your `AGENTS.md`, your hooks, or your existing hook configuration. It does not rewrite `origin`.
-
-Then close the layers that init cannot turn on by itself:
-
-```bash
-agit protect            # show the GitHub ruleset
-agit protect --apply    # create it (needs admin on the repo)
-agit isolate            # point this clone's origin at a local mirror
-agit doctor             # confirm what is actually active
-```
-
-## Quick start
-
-```bash
-agit init --yes --checks "npm test"
-agit isolate            # optional; see below
+npx agit init --yes --checks "npm test"
 agit start AUTH-123
 # change code; git diff and git status are fine
 agit commit -m "AUTH-123: fix login validation"
 agit finish AUTH-123
+```
+
+`init` writes `.agit/profile.yml`, merges an agit section into `AGENTS.md`, installs the pre-push hook and the agent guards, and adds Cursor / Claude / Copilot instruction files. After `init`, layers 2 and 3 are already on. It does not overwrite the rest of your `AGENTS.md`, your hooks, or your existing hook configuration. It does not rewrite `origin`.
+
+Then, if you want the layers `init` cannot turn on by itself:
+
+```bash
+agit protect --apply    # GitHub ruleset; needs admin on the repo
+agit isolate            # optional; this clone only
+agit doctor             # confirm what is actually active
 ```
 
 You get a draft PR. Review it, ask for changes, and the agent's fixes land on the same PR:
@@ -97,6 +98,21 @@ If the agent starts in an empty chat, generate a prompt:
 ```bash
 agit prompt AUTH-123
 ```
+
+## Who this is for
+
+People who already let a coding agent commit or push in a real repository, and want one branch, one draft PR, and checks before publish.
+
+Hooks are first-class for **Cursor** and **Claude Code**. Copilot gets instruction files. Codex can follow the CLI; there is no Codex adapter.
+
+Not for: workflows where the agent is never allowed to touch Git; hosted agents whose platform already owns the PR workflow; or anyone who needs a sandbox.
+
+## What agit does not do
+
+- It does not run agents, replace GitHub, or hide a merge queue.
+- It does not sandbox the agent or hold a separate credential. `agit isolate` stops `git push origin` and `git push "$(git remote get-url origin)"`. It does not stop `git push git@github.com:…` or `git push "$(git config --get agit.pushUrl)"`.
+- It does not defend against a hostile agent. It reduces the cost of an unreliable one.
+- It does not resolve conflicts. On conflict, it stops and asks a human.
 
 ## Isolate this clone
 
@@ -165,18 +181,9 @@ Content scanning catches a key pasted into `config.ts`, which a filename denylis
 
 Isolation is not in this file. It lives in the clone's git config (`agit.isolate`, `agit.pushUrl`) so a `start` from `origin/main` cannot roll it back, and so a teammate's clone is not silently isolated.
 
-## Who this is for
-
-Teams that already let Cursor, Claude Code, Copilot, or Codex touch a real repository and want a boring, reviewable handoff: one branch, one draft PR, checks before publish.
-
-## What agit does not do
-
-- It does not run agents, replace GitHub, or hide a merge queue.
-- It does not sandbox the agent or hold a separate credential. `agit isolate` stops `git push origin` and `git push "$(git remote get-url origin)"`. It does not stop `git push git@github.com:…` or `git push "$(git config --get agit.pushUrl)"`.
-- It does not defend against a hostile agent. It reduces the cost of an unreliable one.
-- It does not resolve conflicts. On conflict, it stops and asks a human.
-
 ## Contributing
+
+Try it on one repository where the agent can already commit or push. If agit blocks a Git action you actually wanted, open an issue with the exact command.
 
 The core loop is intentionally small. Useful contributions:
 
