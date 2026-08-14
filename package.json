@@ -1,0 +1,48 @@
+{
+  "name": "@hudishkin/agit",
+  "version": "0.1.0",
+  "description": "CLI protocol that gives AI coding agents a safe Git workflow: start a task branch, commit locally, run checks, push once, and open a draft PR",
+  "type": "module",
+  "bin": {
+    "agit": "bin/agit.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js test/regression/*.test.js",
+    "agit": "node bin/agit.js"
+  },
+  "keywords": [
+    "git",
+    "cli",
+    "ai-agents",
+    "coding-agents",
+    "pull-request",
+    "github",
+    "cursor",
+    "claude"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hudishkin/agit.git"
+  },
+  "homepage": "https://github.com/hudishkin/agit#readme",
+  "bugs": {
+    "url": "https://github.com/hudishkin/agit/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "js-yaml": "^4.1.0",
+    "minimatch": "^10.0.0"
+  }
+}

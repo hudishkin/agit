@@ -1,0 +1,45 @@
+# Publishes @hudishkin/agit on a version tag (v0.1.0).
+#
+# One-time on npmjs.com → package → Settings → Trusted Publisher:
+#   GitHub user: hudishkin
+#   Repository:  agit
+#   Workflow:    publish.yml
+#   Action:      npm publish
+#
+# Then: npm version patch && git push && git push --tags
+
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Check tag matches package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag v$tag does not match package.json version $version"
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm test
+      - run: npm publish

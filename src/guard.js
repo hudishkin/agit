@@ -1,0 +1,228 @@
+const GIT_HINTS = {
+  push: "Run: agit finish <task-id>",
+  commit: 'Run: agit commit -m "<task-id>: <summary>"',
+  checkout: "Run: agit start <task-id>",
+  switch: "Run: agit start <task-id>",
+  restore: "Edit files directly instead of restoring them with git.",
+  branch: "Run: agit start <task-id>",
+  pull: "Run: agit start <task-id>; it rebases the task branch onto origin.",
+  merge: "Stop and report the conflict. Do not merge.",
+  rebase: "Stop and report. Do not rewrite published history.",
+  reset: "Stop and report. Do not rewrite history.",
+  revert: 'Make the fix as a normal change and run: agit commit -m "<task-id>: ..."',
+  "cherry-pick": "Stop and report. Do not move commits between branches.",
+  stash: "Leave the working tree alone; agit commit stages what you changed.",
+  clean: "Do not delete untracked work.",
+  rm: "Delete the file with your editor tools; agit commit stages the deletion.",
+  mv: "Move the file with your editor tools; agit commit stages the rename.",
+  tag: "agit does not use tags for task workflow.",
+  remote: "Do not change remotes.",
+  submodule: "Do not change submodules.",
+  worktree: "Do not create worktrees.",
+  "update-ref": "Do not move refs by hand.",
+  "filter-branch": "Do not rewrite history.",
+  am: "Do not apply patches; make the change directly.",
+  apply: "Do not apply patches; make the change directly.",
+  gc: "Do not run garbage collection.",
+  prune: "Do not prune objects.",
+};
+
+const MUTATING_GIT = new Set(Object.keys(GIT_HINTS));
+
+// Subcommands that mutate only when given more than a listing flag.
+const LISTABLE_GIT = new Map([
+  ["branch", new Set(["-l", "--list", "-v", "-vv", "-a", "--all", "-r", "--remotes", "--show-current", "--merged", "--no-merged", "--contains", "--points-at", "--format", "--sort", "--color", "--no-color"])],
+  ["tag", new Set(["-l", "--list", "-n", "--contains", "--points-at", "--merged", "--no-merged", "--format", "--sort", "--color", "--no-color"])],
+  ["remote", new Set(["-v", "--verbose", "show", "get-url"])],
+  ["stash", new Set(["list", "show"])],
+]);
+
+const READONLY_CONFIG_FLAGS = new Set(["--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l"]);
+
+// Global git options that consume the following token as their value.
+const GIT_GLOBAL_WITH_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix"]);
+
+const GH_MUTATING_PR = new Set(["create", "merge", "ready", "close", "reopen", "edit"]);
+
+export function tokenize(segment) {
+  const tokens = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match = pattern.exec(segment);
+  while (match !== null) {
+    tokens.push(match[1] ?? match[2] ?? match[3]);
+    match = pattern.exec(segment);
+  }
+  return tokens;
+}
+
+function segments(command) {
+  return command.split(/\|\||&&|;|\||\n|&/).map((part) => part.trim()).filter(Boolean);
+}
+
+function isProgram(token, name) {
+  const bare = token.replace(/\.exe$/i, "");
+  return bare === name || bare.endsWith(`/${name}`);
+}
+
+function subcommandOf(tokens, programIndex) {
+  let index = programIndex + 1;
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (!token.startsWith("-")) {
+      return { name: token, args: tokens.slice(index + 1) };
+    }
+    if (GIT_GLOBAL_WITH_VALUE.has(token)) {
+      index += 2;
+      continue;
+    }
+    index += 1;
+  }
+  return { name: null, args: [] };
+}
+
+function findProgram(tokens, name) {
+  return tokens.findIndex((token) => isProgram(token, name));
+}
+
+function listingOnly(subcommand, args) {
+  const allowed = LISTABLE_GIT.get(subcommand);
+  if (!allowed) {
+    return false;
+  }
+  return args.every((arg) => allowed.has(arg) || allowed.has(arg.split("=")[0]));
+}
+
+function denial(reason, hint) {
+  return { decision: "deny", reason, hint };
+}
+
+const ALLOW = { decision: "allow", reason: null, hint: null };
+
+export function classifyCommand(command, depth = 0) {
+  if (typeof command !== "string" || !command.trim()) {
+    return ALLOW;
+  }
+
+  if (/agit-allow-push/.test(command)) {
+    return denial(
+      "Tampering with the agit push token is not allowed.",
+      "Run: agit finish <task-id>",
+    );
+  }
+
+  for (const segment of segments(command)) {
+    const tokens = tokenize(segment);
+
+    const gitIndex = findProgram(tokens, "git");
+    if (gitIndex !== -1) {
+      const verdict = classifyGit(tokens, gitIndex);
+      if (verdict.decision === "deny") {
+        return verdict;
+      }
+    }
+
+    const ghIndex = findProgram(tokens, "gh");
+    if (ghIndex !== -1) {
+      const verdict = classifyGh(tokens, ghIndex);
+      if (verdict.decision === "deny") {
+        return verdict;
+      }
+    }
+
+    // sh -c "git push" hides the real command inside one quoted token.
+    if (depth < 3) {
+      for (const token of tokens) {
+        if (!/\s/.test(token)) {
+          continue;
+        }
+        const verdict = classifyCommand(token, depth + 1);
+        if (verdict.decision === "deny") {
+          return verdict;
+        }
+      }
+    }
+  }
+
+  return ALLOW;
+}
+
+function classifyGit(tokens, gitIndex) {
+  const { name, args } = subcommandOf(tokens, gitIndex);
+
+  if (tokens.includes("--no-verify")) {
+    return denial("Skipping git hooks is not allowed.", "Run: agit finish <task-id>");
+  }
+
+  if (name === null) {
+    return ALLOW;
+  }
+
+  if (name === "config") {
+    const readOnly = args.some((arg) => READONLY_CONFIG_FLAGS.has(arg.split("=")[0]));
+    return readOnly
+      ? ALLOW
+      : denial("Changing git config is not allowed.", "Ask the human to change git config.");
+  }
+
+  if (!MUTATING_GIT.has(name)) {
+    return ALLOW;
+  }
+
+  if (listingOnly(name, args)) {
+    return ALLOW;
+  }
+
+  return denial(
+    `git ${name} is managed by agit in this repository.`,
+    GIT_HINTS[name] ?? "Use agit for git mutations.",
+  );
+}
+
+function classifyGh(tokens, ghIndex) {
+  const { name, args } = subcommandOf(tokens, ghIndex);
+  if (name !== "pr") {
+    return ALLOW;
+  }
+  const action = args.find((arg) => !arg.startsWith("-"));
+  if (action && GH_MUTATING_PR.has(action)) {
+    return denial(
+      `gh pr ${action} is managed by agit in this repository.`,
+      "Run: agit finish <task-id>. A human reviews and merges the draft PR.",
+    );
+  }
+  return ALLOW;
+}
+
+export function cursorResponse(verdict) {
+  if (verdict.decision === "allow") {
+    return { permission: "allow" };
+  }
+  return {
+    permission: "deny",
+    user_message: `agit blocked: ${verdict.reason}`,
+    agent_message: `${verdict.reason}\n${verdict.hint}\nRead-only git is allowed: git status, git diff, git log.`,
+  };
+}
+
+export function claudeResponse(verdict) {
+  if (verdict.decision === "allow") {
+    return null;
+  }
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: `${verdict.reason}\n${verdict.hint}\nRead-only git is allowed: git status, git diff, git log.`,
+    },
+  };
+}
+
+export function commandFromPayload(payload) {
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+  if (typeof payload.command === "string") {
+    return payload.command;
+  }
+  return typeof payload.tool_input?.command === "string" ? payload.tool_input.command : "";
+}

@@ -1,0 +1,10 @@
+export const PACKAGE_NAME = "@hudishkin/agit";
+export const AGIT_DIR = ".agit";
+export const PROFILE_FILE = ".agit/profile.yml";
+export const TASKS_DIR = ".agit/tasks";
+export const LOGS_DIR = ".agit/logs";
+export const MARKER_START = "<!-- agit:start -->";
+export const MARKER_END = "<!-- agit:end -->";
+export const MIRROR_DIR = ".agit/mirror.git";
+export const GITIGNORE_ENTRIES = [".agit/tasks/", ".agit/logs/", ".agit/mirror.git/"];
+export const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;

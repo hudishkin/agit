@@ -1,0 +1,202 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { commitCommand } from "../src/commands/commit.js";
+import { finishCommand } from "../src/commands/finish.js";
+import { initCommand } from "../src/commands/init.js";
+import { startCommand } from "../src/commands/start.js";
+import { ChecksFailed, PublishFailed, TaskStateError, WrongBranch } from "../src/errors.js";
+import { logOneline } from "../src/git.js";
+import { loadTask } from "../src/taskstore.js";
+import { createGitRepo, gitRun } from "./helpers/git-harness.js";
+
+const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
+const repos = [];
+const dirs = [];
+
+afterEach(() => {
+  for (const repo of repos.splice(0)) {
+    rmSync(repo.root, { recursive: true, force: true });
+  }
+  for (const dir of dirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function repo() {
+  const created = createGitRepo();
+  repos.push(created);
+  return created;
+}
+
+async function readyTask({ checks = ["true"] } = {}) {
+  const created = repo();
+  await initCommand(created.work, { yes: true, install: false, checks });
+  gitRun(created.work, ["add", "-A"]);
+  gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+  await startCommand(created.work, "AUTH-123");
+  writeFileSync(join(created.work, "note.txt"), "ok\n");
+  await commitCommand(created.work, "AUTH-123: add note");
+  return created;
+}
+
+function fakePr(url = "https://github.com/acme/backend/pull/1") {
+  const calls = [];
+  return {
+    calls,
+    createPr: async (_cwd, args) => {
+      calls.push(args);
+      return url;
+    },
+  };
+}
+
+function fakeGhPath(url = "https://github.com/acme/backend/pull/9") {
+  const dir = mkdtempSync(join(tmpdir(), "agit-gh-"));
+  dirs.push(dir);
+  const script = join(dir, "gh");
+  writeFileSync(script, `#!/bin/sh\necho ${url}\n`);
+  chmodSync(script, 0o755);
+  return dir;
+}
+
+describe("finish", () => {
+  test("does not push when checks fail", async () => {
+    const { work, origin } = await readyTask({ checks: ["false"] });
+    const gh = fakePr();
+
+    await assert.rejects(() => finishCommand(work, "AUTH-123", gh), ChecksFailed);
+    assert.equal(loadTask(work, "AUTH-123").status, "checks_failed");
+    assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
+    assert.equal(gh.calls.length, 0);
+    assert.match(readFileSync(join(work, ".agit/logs/AUTH-123-checks.log"), "utf8"), /\$ false/);
+  });
+
+  test("pushes once and creates a draft PR", async () => {
+    const { work, origin } = await readyTask();
+    const gh = fakePr();
+
+    const result = await finishCommand(work, "AUTH-123", gh);
+    const task = loadTask(work, "AUTH-123");
+
+    assert.equal(result.pr_url, "https://github.com/acme/backend/pull/1");
+    assert.equal(task.status, "pr_created");
+    assert.equal(task.publish.pushed, true);
+    assert.match(gitRun(origin, ["branch"]), /agit\/AUTH-123/);
+    assert.equal(gh.calls.length, 1);
+    assert.equal(gh.calls[0].head, "agit/AUTH-123");
+    assert.equal(gh.calls[0].base, "main");
+    assert.match(gh.calls[0].title, /AUTH-123: add note/);
+    assert.match(gh.calls[0].body, /AUTH-123/);
+    assert.match(gh.calls[0].body, /note\.txt/);
+    assert.match(gh.calls[0].body, /`true`/);
+  });
+
+  test("second finish does not push again", async () => {
+    const { work, origin } = await readyTask();
+    const gh = fakePr();
+
+    await finishCommand(work, "AUTH-123", gh);
+    const sha = gitRun(origin, ["rev-parse", "agit/AUTH-123"]).trim();
+
+    const again = await finishCommand(work, "AUTH-123", gh);
+    assert.equal(again.already, true);
+    assert.equal(again.pr_url, "https://github.com/acme/backend/pull/1");
+    assert.equal(gitRun(origin, ["rev-parse", "agit/AUTH-123"]).trim(), sha);
+    assert.equal(gh.calls.length, 1);
+  });
+
+  test("retries PR only after push succeeded and gh failed", async () => {
+    const { work, origin } = await readyTask();
+    let fail = true;
+    const calls = [];
+
+    await assert.rejects(
+      () =>
+        finishCommand(work, "AUTH-123", {
+          createPr: async (_cwd, args) => {
+            calls.push(args);
+            if (fail) {
+              throw new PublishFailed("Checks passed, but remote publish failed.");
+            }
+            return "https://github.com/acme/backend/pull/2";
+          },
+        }),
+      PublishFailed,
+    );
+
+    assert.match(gitRun(origin, ["branch"]), /agit\/AUTH-123/);
+    assert.equal(loadTask(work, "AUTH-123").status, "pushed");
+    const sha = gitRun(origin, ["rev-parse", "agit/AUTH-123"]).trim();
+
+    fail = false;
+    const result = await finishCommand(work, "AUTH-123", {
+      createPr: async (_cwd, args) => {
+        calls.push(args);
+        return "https://github.com/acme/backend/pull/2";
+      },
+    });
+
+    assert.equal(result.pr_url, "https://github.com/acme/backend/pull/2");
+    assert.equal(loadTask(work, "AUTH-123").status, "pr_created");
+    assert.equal(gitRun(origin, ["rev-parse", "agit/AUTH-123"]).trim(), sha);
+    assert.equal(calls.length, 2);
+  });
+
+  test("refuses to finish on the default branch", async () => {
+    const { work } = await readyTask();
+    gitRun(work, ["checkout", "main"]);
+
+    await assert.rejects(() => finishCommand(work, "AUTH-123", fakePr()), WrongBranch);
+  });
+
+  test("refuses to finish without commits", async () => {
+    const created = repo();
+    await initCommand(created.work, { yes: true, install: false, checks: ["true"] });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+    await startCommand(created.work, "AUTH-123");
+
+    await assert.rejects(() => finishCommand(created.work, "AUTH-123", fakePr()), TaskStateError);
+  });
+
+  test("CLI finish --json uses gh on PATH", async () => {
+    const { work } = await readyTask();
+    const ghDir = fakeGhPath("https://github.com/acme/backend/pull/9");
+
+    const result = spawnSync(process.execPath, [bin, "finish", "AUTH-123", "--json", "-C", work], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${ghDir}:${process.env.PATH}` },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.pr_url, "https://github.com/acme/backend/pull/9");
+  });
+
+  test("squashes commits before the first push", async () => {
+    const { work } = await readyTask();
+    writeFileSync(join(work, "note2.txt"), "two\n");
+    await commitCommand(work, "AUTH-123: second change");
+    assert.equal((await logOneline(work, "main..HEAD")).length, 2);
+
+    await finishCommand(work, "AUTH-123", { ...fakePr(), squash: true });
+    assert.equal((await logOneline(work, "main..HEAD")).length, 1);
+    assert.equal(loadTask(work, "AUTH-123").commits.length, 1);
+  });
+
+  test("refuses to squash after a push", async () => {
+    const { work } = await readyTask();
+    await finishCommand(work, "AUTH-123", fakePr());
+
+    await assert.rejects(
+      () => finishCommand(work, "AUTH-123", { ...fakePr(), squash: true }),
+      TaskStateError,
+    );
+  });
+});
