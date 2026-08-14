@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AgitError } from "./errors.js";
 
 const TEMPLATE_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "templates", "agit-guard.sh");
 
@@ -32,14 +33,88 @@ const FALLBACKS = {
   claude: ": # no decision; the normal permission flow applies",
 };
 
-function readJson(path) {
+function stripJsonComments(text) {
+  let out = "";
+  let i = 0;
+  let inString = false;
+  let escape = false;
+
+  while (i < text.length) {
+    const c = text[i];
+    const next = text[i + 1];
+
+    if (inString) {
+      out += c;
+      if (escape) {
+        escape = false;
+      } else if (c === "\\") {
+        escape = true;
+      } else if (c === '"') {
+        inString = false;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (c === '"') {
+      inString = true;
+      out += c;
+      i += 1;
+      continue;
+    }
+
+    if (c === "/" && next === "/") {
+      i += 2;
+      while (i < text.length && text[i] !== "\n") {
+        i += 1;
+      }
+      continue;
+    }
+
+    if (c === "/" && next === "*") {
+      i += 2;
+      while (i + 1 < text.length && !(text[i] === "*" && text[i + 1] === "/")) {
+        i += 1;
+      }
+      i += 2;
+      continue;
+    }
+
+    out += c;
+    i += 1;
+  }
+
+  return out;
+}
+
+function parseJsonObject(text) {
+  const stripped = stripJsonComments(text);
+  let parsed;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch {
+    parsed = JSON.parse(stripped.replace(/,(\s*[}\]])/g, "$1"));
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("not a JSON object");
+  }
+  return parsed;
+}
+
+function readJson(path, { required = false } = {}) {
   if (!existsSync(path)) {
     return {};
   }
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    return parseJsonObject(readFileSync(path, "utf8"));
   } catch {
+    if (required) {
+      throw new AgitError({
+        code: "error",
+        message: `Cannot parse ${path}.`,
+        hint: "Fix the JSON (comments are ok) and retry. agit will not overwrite a file it cannot read.",
+      });
+    }
     return {};
   }
 }
@@ -66,7 +141,7 @@ export function writeGuardScript(cwd, relativePath, vendor) {
 
 export function writeCursorHooks(cwd) {
   const path = join(cwd, CURSOR_HOOKS_FILE);
-  const config = readJson(path);
+  const config = readJson(path, { required: true });
   config.version = config.version ?? 1;
   config.hooks = config.hooks && typeof config.hooks === "object" ? config.hooks : {};
 
@@ -86,7 +161,7 @@ export function writeCursorHooks(cwd) {
 
 export function writeClaudeSettings(cwd) {
   const path = join(cwd, CLAUDE_SETTINGS_FILE);
-  const config = readJson(path);
+  const config = readJson(path, { required: true });
   config.hooks = config.hooks && typeof config.hooks === "object" ? config.hooks : {};
 
   const groups = asArray(config.hooks.PreToolUse);

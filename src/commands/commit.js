@@ -92,7 +92,7 @@ export async function commitCommand(cwd, message, { files: requested } = {}) {
   }
 
   await add(cwd, files);
-  const hash = await commit(cwd, message);
+  const hash = await commit(cwd, message, files);
   task.commits = [...(task.commits ?? []), hash];
   task.status = "committed";
   saveTask(cwd, task);

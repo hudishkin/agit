@@ -10,7 +10,9 @@ import { finishCommand } from "../src/commands/finish.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError, WrongBranch } from "../src/errors.js";
+import { createDraftPr } from "../src/gh.js";
 import { logOneline } from "../src/git.js";
+import { loadProfile, saveProfile } from "../src/profile.js";
 import { loadTask } from "../src/taskstore.js";
 import { createGitRepo, gitRun } from "./helpers/git-harness.js";
 
@@ -197,6 +199,46 @@ describe("finish", () => {
     await finishCommand(work, "AUTH-123", { ...fakePr(), squash: true });
     assert.equal((await logOneline(work, "main..HEAD")).length, 1);
     assert.equal(loadTask(work, "AUTH-123").commits.length, 1);
+  });
+
+  test("passes owner/name to PR creation", async () => {
+    const { work } = await readyTask();
+    const profile = loadProfile(work);
+    profile.repo.owner = "acme";
+    profile.repo.name = "backend";
+    saveProfile(work, profile);
+    gitRun(work, ["add", "-A"]);
+    gitRun(work, ["commit", "-m", "chore: set repo slug"]);
+
+    const gh = fakePr();
+    await finishCommand(work, "AUTH-123", gh);
+    assert.equal(gh.calls[0].repo, "acme/backend");
+  });
+
+  test("createDraftPr forwards --repo to gh", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agit-gh-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "gh"),
+      `#!/bin/sh\nprintf '%s\\n' "$*" > "$(dirname "$0")/args"\necho https://github.com/acme/backend/pull/1\n`,
+    );
+    chmodSync(join(dir, "gh"), 0o755);
+
+    const previous = process.env.PATH;
+    process.env.PATH = `${dir}:${previous}`;
+    try {
+      const url = await createDraftPr(dir, {
+        base: "main",
+        head: "agit/T1",
+        title: "t",
+        body: "b",
+        repo: "acme/backend",
+      });
+      assert.equal(url, "https://github.com/acme/backend/pull/1");
+      assert.match(readFileSync(join(dir, "args"), "utf8"), /--repo acme\/backend/);
+    } finally {
+      process.env.PATH = previous;
+    }
   });
 
   test("refuses to squash after a push", async () => {

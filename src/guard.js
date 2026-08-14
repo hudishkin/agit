@@ -89,6 +89,10 @@ function listingOnly(subcommand, args) {
   if (!allowed) {
     return false;
   }
+  // `git stash` with no args is `stash push`, not a listing.
+  if (args.length === 0) {
+    return subcommand !== "stash";
+  }
   return args.every((arg) => allowed.has(arg) || allowed.has(arg.split("=")[0]));
 }
 
