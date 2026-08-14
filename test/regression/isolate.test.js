@@ -146,5 +146,6 @@ describe("regression: local mirror", () => {
     await isolateCommand(work);
     const after = await doctorCommand(work);
     assert.equal(after.checks.find((check) => check.id === "credential_boundary").status, "ok");
+    assert.match(after.checks.find((check) => check.id === "credential_boundary").message, /not a sandbox/);
   });
 });

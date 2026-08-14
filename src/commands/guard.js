@@ -1,4 +1,5 @@
 import { claudeResponse, classifyCommand, commandFromPayload, cursorResponse } from "../guard.js";
+import { isolationEnabled } from "../mirror.js";
 import { enforcementOf, loadProfile, profileExists } from "../profile.js";
 
 function cwdFromPayload(payload) {
@@ -40,8 +41,15 @@ export async function guardCommand(vendor, { stdin = process.stdin, stdout = pro
     payload = null;
   }
 
-  const enforcement = enforcementFromCwd(cwdFromPayload(payload));
-  const verdict = classifyCommand(commandFromPayload(payload), { enforcement });
+  const cwd = cwdFromPayload(payload);
+  const enforcement = enforcementFromCwd(cwd);
+  let isolated = false;
+  try {
+    isolated = await isolationEnabled(cwd);
+  } catch {
+    isolated = false;
+  }
+  const verdict = classifyCommand(commandFromPayload(payload), { enforcement, isolated });
 
   if (vendor === "claude") {
     const response = claudeResponse(verdict, enforcement);

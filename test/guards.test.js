@@ -78,6 +78,7 @@ describe("install-agent-guards", () => {
     const config = readJson(join(work, ".claude/settings.json"));
     assert.ok(config.permissions.deny.includes("Bash(git push:*)"));
     assert.ok(config.permissions.deny.includes("Bash(git reset --hard:*)"));
+    assert.ok(config.permissions.deny.includes("Bash(agit finish:*)"));
     assert.equal(config.permissions.deny.includes("Bash(git commit:*)"), false);
     assert.match(readFileSync(join(work, "CLAUDE.md"), "utf8"), /Local Git is allowed/);
   });

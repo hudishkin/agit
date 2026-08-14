@@ -326,7 +326,7 @@ export async function doctorCommand(cwd) {
         "credential",
         "credential_boundary",
         "ok",
-        `origin is the local mirror; agit finish publishes to ${isolation.push_url}. git push <url> still uses your credential`,
+        "origin is the local mirror. The agent cannot read agit.pushUrl. git push <url> and mutating curl can still reach GitHub if the guard is not running. This is not a sandbox.",
       );
     } else if (isolation.flagged && !isolation.origin_is_mirror) {
       add(
