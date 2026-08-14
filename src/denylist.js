@@ -3,10 +3,12 @@ import { minimatch } from "minimatch";
 import { DEFAULT_PROFILE } from "./profile.js";
 
 // dot: true so that * also matches leading dots; without it *.example never
-// matches .env.example.
+// matches .env.example. nocase so .ENV and secrets.PEM are still denied.
 function matchesAny(file, patterns) {
   return patterns.some(
-    (pattern) => minimatch(file, pattern, { dot: true }) || minimatch(basename(file), pattern, { dot: true }),
+    (pattern) =>
+      minimatch(file, pattern, { dot: true, nocase: true }) ||
+      minimatch(basename(file), pattern, { dot: true, nocase: true }),
   );
 }
 

@@ -5,7 +5,7 @@ const GIT_HINTS = {
   switch: "Run: agit start <task-id>",
   restore: "Edit files directly instead of restoring them with git.",
   branch: "Run: agit start <task-id>",
-  pull: "Run: agit start <task-id>; it rebases the task branch onto origin.",
+  pull: "Do not pull. Start a new task id if you need a fresh base from origin.",
   merge: "Stop and report the conflict. Do not merge.",
   rebase: "Stop and report. Do not rewrite published history.",
   reset: "Stop and report. Do not rewrite history.",
@@ -164,6 +164,16 @@ function classifyGit(tokens, gitIndex) {
       : denial("Changing git config is not allowed.", "Ask the human to change git config.");
   }
 
+  if (name === "fetch") {
+    if (args.some(isRefspec)) {
+      return denial(
+        "git fetch with a refspec can move local branches.",
+        "Run: agit start <task-id> to refresh from origin.",
+      );
+    }
+    return ALLOW;
+  }
+
   if (!MUTATING_GIT.has(name)) {
     return ALLOW;
   }
@@ -178,8 +188,48 @@ function classifyGit(tokens, gitIndex) {
   );
 }
 
+function isRefspec(arg) {
+  if (!arg.includes(":") || arg.startsWith("-")) {
+    return false;
+  }
+  if (arg.includes("://")) {
+    return false;
+  }
+  // scp-like remote: git@host:path
+  if (/^[\w.-]+@[\w.-]+:/.test(arg)) {
+    return false;
+  }
+  return true;
+}
+
+function classifyGhApi(args) {
+  const methodAt = args.findIndex((arg) => arg === "--method" || arg === "-X");
+  const method = methodAt !== -1 ? (args[methodAt + 1] ?? "").toUpperCase() : null;
+  const isGraphql = args.some((arg) => arg === "graphql" || arg.startsWith("graphql/"));
+  const hasBody = args.some(
+    (arg) =>
+      arg === "--input" ||
+      arg === "-f" ||
+      arg === "-F" ||
+      arg === "--raw-field" ||
+      arg.startsWith("-f=") ||
+      arg.startsWith("-F="),
+  );
+  const effective = method ?? (hasBody || isGraphql ? "POST" : "GET");
+  if (effective === "GET" || effective === "HEAD") {
+    return ALLOW;
+  }
+  return denial(
+    "gh api mutations are managed by agit in this repository.",
+    "Run: agit finish <task-id>. A human reviews and merges the draft PR.",
+  );
+}
+
 function classifyGh(tokens, ghIndex) {
   const { name, args } = subcommandOf(tokens, ghIndex);
+  if (name === "api") {
+    return classifyGhApi(args);
+  }
   if (name !== "pr") {
     return ALLOW;
   }

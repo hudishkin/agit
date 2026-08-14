@@ -60,6 +60,9 @@ describe("guard", () => {
       "git stash list",
       "git config --get user.email",
       "git fetch origin",
+      "git fetch git@github.com:acme/x.git",
+      "gh api repos/acme/x",
+      "gh api --method GET repos/acme/x/pulls",
       "git rev-parse HEAD",
       "npm test",
       "agit commit -m 'AUTH-1: fix'",
@@ -85,6 +88,20 @@ describe("guard", () => {
     assert.equal(decide("gh pr merge 4 --squash"), "deny");
     assert.equal(decide("gh pr list"), "allow");
     assert.equal(decide("gh pr view 4"), "allow");
+  });
+
+  test("denies fetch refspecs that can move local branches", () => {
+    assert.equal(decide("git fetch origin +main:main"), "deny");
+    assert.equal(decide("git fetch origin main:agit/T1"), "deny");
+    assert.equal(decide("git fetch . HEAD:refs/heads/main"), "deny");
+    assert.equal(decide("git fetch origin main"), "allow");
+  });
+
+  test("denies mutating gh api calls", () => {
+    assert.equal(decide("gh api --method POST repos/acme/x/pulls"), "deny");
+    assert.equal(decide("gh api -X PUT repos/acme/x/pulls/1/merge"), "deny");
+    assert.equal(decide("gh api graphql -f query=mutation { }"), "deny");
+    assert.equal(decide("gh api repos/acme/x/pulls -f title=x -f head=y -f base=z"), "deny");
   });
 
   test("allows an empty or unknown payload", () => {

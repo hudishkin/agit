@@ -141,6 +141,14 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
       );
     }
 
+    if (!(await isClean(cwd))) {
+      saveTask(cwd, task);
+      throw new DirtyTree(
+        "Checks passed, but they left the working tree dirty.",
+        "Commit the check output with agit commit, or restore the files, then run agit finish again.",
+      );
+    }
+
     if (shouldSquash(profile, squash)) {
       const subject = await firstCommitSubject(cwd, base);
       const hash = await squashCommits(cwd, base, subject);

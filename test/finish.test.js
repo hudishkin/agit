@@ -9,7 +9,7 @@ import { commitCommand } from "../src/commands/commit.js";
 import { finishCommand } from "../src/commands/finish.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { ChecksFailed, PublishFailed, TaskStateError, WrongBranch } from "../src/errors.js";
+import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError, WrongBranch } from "../src/errors.js";
 import { logOneline } from "../src/git.js";
 import { loadTask } from "../src/taskstore.js";
 import { createGitRepo, gitRun } from "./helpers/git-harness.js";
@@ -65,6 +65,15 @@ function fakeGhPath(url = "https://github.com/acme/backend/pull/9") {
 }
 
 describe("finish", () => {
+  test("does not push when checks dirty the tree", async () => {
+    const { work, origin } = await readyTask({ checks: ["touch leftover.txt"] });
+    const gh = fakePr();
+
+    await assert.rejects(() => finishCommand(work, "AUTH-123", gh), DirtyTree);
+    assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
+    assert.equal(gh.calls.length, 0);
+  });
+
   test("does not push when checks fail", async () => {
     const { work, origin } = await readyTask({ checks: ["false"] });
     const gh = fakePr();

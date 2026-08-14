@@ -52,6 +52,13 @@ describe("start", () => {
     await assert.rejects(() => startCommand(work, "foo/bar"), TaskStateError);
   });
 
+  test("fails when origin cannot be fetched", async () => {
+    const { work } = await readyRepo();
+    gitRun(work, ["remote", "set-url", "origin", join(work, "missing.git")]);
+
+    await assert.rejects(() => startCommand(work, "AUTH-123"), /Could not fetch from origin/);
+  });
+
   test("creates a local task branch without pushing", async () => {
     const { work, origin } = await readyRepo();
     const result = await startCommand(work, "AUTH-123");
