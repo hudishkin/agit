@@ -73,6 +73,15 @@ async function checkEnvironment(checks, cwd) {
     try {
       profile = loadProfile(cwd);
       add(checks, "environment", "profile", "ok", "Loaded .agit/profile.yml");
+      add(
+        checks,
+        "environment",
+        "enforcement",
+        "ok",
+        profile.workflow.enforcement === "remote"
+          ? "Enforcement is remote: local git is allowed, publish is blocked"
+          : `Enforcement is ${profile.workflow.enforcement}`,
+      );
       try {
         const branch = await defaultBranch(cwd);
         add(

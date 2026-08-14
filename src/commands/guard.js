@@ -1,4 +1,23 @@
 import { claudeResponse, classifyCommand, commandFromPayload, cursorResponse } from "../guard.js";
+import { enforcementOf, loadProfile, profileExists } from "../profile.js";
+
+function cwdFromPayload(payload) {
+  if (payload && typeof payload.cwd === "string" && payload.cwd) {
+    return payload.cwd;
+  }
+  return process.cwd();
+}
+
+function enforcementFromCwd(cwd) {
+  if (!profileExists(cwd)) {
+    return "protocol";
+  }
+  try {
+    return enforcementOf(loadProfile(cwd));
+  } catch {
+    return "protocol";
+  }
+}
 
 async function readAll(stream) {
   if (stream.isTTY) {
@@ -21,16 +40,17 @@ export async function guardCommand(vendor, { stdin = process.stdin, stdout = pro
     payload = null;
   }
 
-  const verdict = classifyCommand(commandFromPayload(payload));
+  const enforcement = enforcementFromCwd(cwdFromPayload(payload));
+  const verdict = classifyCommand(commandFromPayload(payload), { enforcement });
 
   if (vendor === "claude") {
-    const response = claudeResponse(verdict);
+    const response = claudeResponse(verdict, enforcement);
     if (response) {
       stdout.write(`${JSON.stringify(response)}\n`);
     }
     return verdict;
   }
 
-  stdout.write(`${JSON.stringify(cursorResponse(verdict))}\n`);
+  stdout.write(`${JSON.stringify(cursorResponse(verdict, enforcement))}\n`);
   return verdict;
 }

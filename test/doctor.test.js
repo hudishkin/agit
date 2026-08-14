@@ -42,6 +42,8 @@ describe("doctor", () => {
     const result = await doctorCommand(created.work);
     assert.equal(result.ok, true);
     assert.equal(result.checks.find((check) => check.id === "profile").status, "ok");
+    assert.equal(result.checks.find((check) => check.id === "enforcement").status, "ok");
+    assert.match(result.checks.find((check) => check.id === "enforcement").message, /remote/);
     assert.equal(result.checks.find((check) => check.id === "pre_push_hook").status, "ok");
     assert.equal(result.checks.find((check) => check.id === "cursor_guard").status, "ok");
     assert.equal(result.checks.find((check) => check.id === "claude_guard").status, "ok");

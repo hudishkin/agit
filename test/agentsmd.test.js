@@ -45,4 +45,15 @@ describe("agentsmd", () => {
     assert.doesNotMatch(merged, /\nold\n/);
     assert.match(merged, /Use `agit` instead/);
   });
+
+  test("writes the remote section when asked", () => {
+    const dir = mkdtempSync(join(tmpdir(), "agit-md-"));
+    dirs.push(dir);
+
+    writeAgentsMd(dir, "", "remote");
+    const text = readFileSync(join(dir, "AGENTS.md"), "utf8");
+
+    assert.match(text, /Local Git is allowed/);
+    assert.doesNotMatch(text, /Do not use Git mutations for task workflow/);
+  });
 });

@@ -105,6 +105,32 @@ describe("guard", () => {
     assert.equal(decide("gh api repos/acme/x/pulls -f title=x -f head=y -f base=z"), "deny");
   });
 
+  test("remote enforcement allows local git and still blocks publish", () => {
+    const remote = { enforcement: "remote" };
+    for (const command of [
+      "git commit -m 'wip'",
+      "git checkout -b feature",
+      "git switch -c feature",
+      "git stash",
+      "git merge main",
+      "git reset HEAD",
+      "git fetch origin +main:main",
+    ]) {
+      assert.equal(classifyCommand(command, remote).decision, "allow", command);
+    }
+    for (const command of [
+      "git push",
+      "git push origin main",
+      "git reset --hard HEAD",
+      "git push --no-verify",
+      "git commit -m x && git push",
+      "gh pr create --fill",
+      "gh api --method POST repos/acme/x/pulls",
+    ]) {
+      assert.equal(classifyCommand(command, remote).decision, "deny", command);
+    }
+  });
+
   test("allows an empty or unknown payload", () => {
     assert.equal(decide(""), "allow");
     assert.equal(classifyCommand(undefined).decision, "allow");

@@ -3,6 +3,16 @@ import { dirname, join } from "node:path";
 import yaml from "js-yaml";
 import { PROFILE_FILE } from "./paths.js";
 
+export const ENFORCEMENT_MODES = ["remote", "protocol", "patch"];
+
+export function normalizeEnforcement(value) {
+  return ENFORCEMENT_MODES.includes(value) ? value : "protocol";
+}
+
+export function enforcementOf(profile) {
+  return normalizeEnforcement(profile?.workflow?.enforcement);
+}
+
 export const DEFAULT_PROFILE = {
   repo: {
     default_branch: "main",
@@ -15,6 +25,8 @@ export const DEFAULT_PROFILE = {
     finish_mode: "draft_pr",
     squash_on_finish: false,
     one_push_policy: true,
+    // Missing key in an existing profile.yml also loads as protocol.
+    enforcement: "protocol",
   },
   checks: [],
   checks_timeout_sec: 900,

@@ -60,8 +60,9 @@ describe("init", () => {
     assert.equal(profile.repo.owner, "acme");
     assert.equal(profile.repo.name, "backend");
     assert.equal(profile.repo.default_branch, "main");
+    assert.equal(profile.workflow.enforcement, "remote");
     assert.deepEqual(profile.checks, ["npm test"]);
-    assert.match(readFileSync(join(work, "AGENTS.md"), "utf8"), /agit start <task-id>/);
+    assert.match(readFileSync(join(work, "AGENTS.md"), "utf8"), /Local Git is allowed/);
     assert.match(readFileSync(join(work, ".gitignore"), "utf8"), /\.agit\/tasks\//);
     assert.match(readFileSync(join(work, ".gitignore"), "utf8"), /\.agit\/mirror\.git\//);
     assert.equal(existsSync(join(work, ".agit/setup-agent.sh")), true);
@@ -71,6 +72,38 @@ describe("init", () => {
     assert.equal(gitRun(work, ["rev-parse", "HEAD"]).trim(), head);
     assert.equal(await isClean(work), false);
     assert.deepEqual(result.checks, ["npm test"]);
+  });
+
+  test("init --mode protocol keeps the agit CLI workflow", async () => {
+    const { work } = repo();
+
+    await initCommand(work, { yes: true, install: false, mode: "protocol" });
+
+    assert.equal(loadProfile(work).workflow.enforcement, "protocol");
+    assert.match(readFileSync(join(work, "AGENTS.md"), "utf8"), /agit start <task-id>/);
+  });
+
+  test("re-init keeps an existing enforcement mode", async () => {
+    const { work } = repo();
+
+    await initCommand(work, { yes: true, install: false, mode: "protocol" });
+    await initCommand(work, { yes: true, install: false });
+
+    assert.equal(loadProfile(work).workflow.enforcement, "protocol");
+  });
+
+  test("init --guard-only selects remote enforcement", async () => {
+    const { work } = repo();
+
+    await initCommand(work, { yes: true, install: false, guardOnly: true });
+
+    assert.equal(loadProfile(work).workflow.enforcement, "remote");
+  });
+
+  test("rejects an unknown enforcement mode", async () => {
+    const { work } = repo();
+
+    await assert.rejects(() => initCommand(work, { yes: true, install: false, mode: "sandbox" }), AgitError);
   });
 
   test("does not overwrite text outside AGENTS.md markers", async () => {

@@ -68,6 +68,8 @@ export function createProgram() {
       .option("--repo <url>", "Repository URL")
       .option("--default-branch <name>", "Default branch")
       .option("--checks <command>", "Check to run before finish", (value, previous) => [...previous, value], [])
+      .option("--mode <mode>", "Enforcement: remote (default), protocol, or patch")
+      .option("--guard-only", "Remote enforcement; local git stays allowed")
       .option("--no-install", "Do not add agit as a devDependency")
       .option("--no-hooks", "Do not install the pre-push hook")
       .option("--no-rules", "Do not write Cursor/Claude/Copilot rule files")

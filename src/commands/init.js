@@ -10,7 +10,14 @@ import { ensureGitignore } from "../gitignore.js";
 import { installHooks } from "../hooks.js";
 import { writePrTemplate, writeSetupAgent } from "../onboard.js";
 import { PACKAGE_NAME } from "../paths.js";
-import { DEFAULT_PROFILE, loadProfile, profileExists, saveProfile } from "../profile.js";
+import {
+  DEFAULT_PROFILE,
+  ENFORCEMENT_MODES,
+  loadProfile,
+  normalizeEnforcement,
+  profileExists,
+  saveProfile,
+} from "../profile.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -40,7 +47,7 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     throw new AgitError({
       code: "error",
       message: "Non-interactive init requires --yes.",
-      hint: "Run: agit init --yes [--default-branch main] [--checks <cmd>]",
+      hint: "Run: agit init --yes [--mode remote|protocol] [--default-branch main] [--checks <cmd>]",
     });
   }
 
@@ -48,11 +55,27 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
   }
 
-  const current = profileExists(cwd) ? loadProfile(cwd) : DEFAULT_PROFILE;
+  if (options.mode && !ENFORCEMENT_MODES.includes(options.mode)) {
+    throw new AgitError({
+      code: "error",
+      message: `Unknown enforcement mode: ${options.mode}`,
+      hint: "Use --mode remote, --mode protocol, or --mode patch.",
+    });
+  }
+
+  const existed = profileExists(cwd);
+  const current = existed ? loadProfile(cwd) : DEFAULT_PROFILE;
   const detectedUrl = options.repo ?? current.repo.url ?? (await remoteUrl(cwd)) ?? undefined;
   const parsed = parseRepoUrl(detectedUrl);
   const branch = options.defaultBranch ?? current.repo.default_branch ?? (await defaultBranch(cwd));
   const checks = options.checks?.length ? options.checks : current.checks;
+  const enforcement = options.guardOnly
+    ? "remote"
+    : options.mode
+      ? normalizeEnforcement(options.mode)
+      : existed
+        ? current.workflow.enforcement
+        : "remote";
 
   const profile = {
     ...current,
@@ -60,6 +83,10 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
       ...current.repo,
       ...parsed,
       default_branch: branch,
+    },
+    workflow: {
+      ...current.workflow,
+      enforcement,
     },
     checks,
     pr: {
@@ -70,14 +97,19 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
 
   saveProfile(cwd, profile);
   const gitignore = ensureGitignore(cwd);
-  writeAgentsMd(cwd);
+  writeAgentsMd(cwd, undefined, enforcement);
   const setup = writeSetupAgent(cwd);
   const prTemplate = writePrTemplate(cwd);
   const hook = options.hooks === false ? null : await installHooks(cwd, profile);
   const rules =
     options.rules === false
       ? { files: [] }
-      : await installAgentGuardsCommand(cwd, { claude: true, cursor: true, copilot: true });
+      : await installAgentGuardsCommand(cwd, {
+          claude: true,
+          cursor: true,
+          copilot: true,
+          enforcement,
+        });
 
   let install = { attempted: false, installed: false, reason: "skipped" };
   if (options.install !== false) {
@@ -100,6 +132,7 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     agents: "AGENTS.md",
     gitignore: gitignore.added,
     default_branch: profile.repo.default_branch,
+    enforcement,
     checks: profile.checks,
     install,
     hooks: Boolean(hook),

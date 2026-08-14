@@ -13,7 +13,7 @@ export const CLAUDE_GUARD_SCRIPT = ".claude/hooks/agit-guard.sh";
 export const CURSOR_HOOK_COMMAND = `./${CURSOR_GUARD_SCRIPT}`;
 export const CLAUDE_HOOK_COMMAND = `$CLAUDE_PROJECT_DIR/${CLAUDE_GUARD_SCRIPT}`;
 
-export const CLAUDE_DENY_RULES = [
+export const CLAUDE_DENY_RULES_PROTOCOL = [
   "Bash(git push:*)",
   "Bash(git commit:*)",
   "Bash(git reset:*)",
@@ -27,6 +27,23 @@ export const CLAUDE_DENY_RULES = [
   "Bash(git clean:*)",
   "Bash(git pull:*)",
 ];
+
+export const CLAUDE_DENY_RULES_REMOTE = [
+  "Bash(git push:*)",
+  "Bash(git reset --hard:*)",
+  "Bash(gh pr create:*)",
+  "Bash(gh pr merge:*)",
+  "Bash(gh pr ready:*)",
+  "Bash(gh pr close:*)",
+  "Bash(gh pr reopen:*)",
+  "Bash(gh pr edit:*)",
+];
+
+export const CLAUDE_DENY_RULES = CLAUDE_DENY_RULES_PROTOCOL;
+
+export function claudeDenyRules(enforcement = "protocol") {
+  return enforcement === "remote" ? CLAUDE_DENY_RULES_REMOTE : CLAUDE_DENY_RULES_PROTOCOL;
+}
 
 const FALLBACKS = {
   cursor: `printf '%s\\n' '{"permission": "allow"}'`,
@@ -159,7 +176,7 @@ export function writeCursorHooks(cwd) {
   return path;
 }
 
-export function writeClaudeSettings(cwd) {
+export function writeClaudeSettings(cwd, { enforcement = "protocol" } = {}) {
   const path = join(cwd, CLAUDE_SETTINGS_FILE);
   const config = readJson(path, { required: true });
   config.hooks = config.hooks && typeof config.hooks === "object" ? config.hooks : {};
@@ -177,8 +194,13 @@ export function writeClaudeSettings(cwd) {
   config.hooks.PreToolUse = groups;
 
   config.permissions = config.permissions && typeof config.permissions === "object" ? config.permissions : {};
-  const deny = asArray(config.permissions.deny);
-  for (const rule of CLAUDE_DENY_RULES) {
+  const wanted = claudeDenyRules(enforcement);
+  const protocolOnly = CLAUDE_DENY_RULES_PROTOCOL.filter((rule) => !CLAUDE_DENY_RULES_REMOTE.includes(rule));
+  let deny = asArray(config.permissions.deny);
+  if (enforcement === "remote") {
+    deny = deny.filter((rule) => !protocolOnly.includes(rule));
+  }
+  for (const rule of wanted) {
     if (!deny.includes(rule)) {
       deny.push(rule);
     }

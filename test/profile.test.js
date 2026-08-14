@@ -29,6 +29,7 @@ describe("profile and tasks", () => {
     assert.equal(loaded.repo.default_branch, "develop");
     assert.equal(loaded.repo.url, "git@github.com:acme/backend.git");
     assert.equal(loaded.workflow.branch_prefix, DEFAULT_PROFILE.workflow.branch_prefix);
+    assert.equal(loaded.workflow.enforcement, "protocol");
     assert.deepEqual(loaded.checks, ["npm test"]);
     assert.ok(loaded.commit.denylist.includes(".env"));
   });
