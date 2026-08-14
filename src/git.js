@@ -148,8 +148,12 @@ export async function add(cwd, paths) {
   await runGit(cwd, ["add", "--", ...paths]);
 }
 
-export async function commit(cwd, message) {
-  await runGit(cwd, ["commit", "-m", message]);
+export async function commit(cwd, message, paths = []) {
+  const args = ["commit", "-m", message];
+  if (paths.length > 0) {
+    args.push("--only", "--", ...paths);
+  }
+  await runGit(cwd, args);
   return revParse(cwd, "HEAD");
 }
 

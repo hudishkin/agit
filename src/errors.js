@@ -17,7 +17,7 @@ export class NotInitialized extends AgitError {
 }
 
 export class DirtyTree extends AgitError {
-  constructor(message, hint = "Commit or stash changes, then retry.", details = null) {
+  constructor(message, hint = "Commit the changes with agit commit, or remove them, then retry.", details = null) {
     super({ code: "dirty_tree", message, hint, details, exitCode: 3 });
     this.name = "DirtyTree";
   }

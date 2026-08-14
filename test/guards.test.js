@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:f
 import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { installAgentGuardsCommand } from "../src/commands/guards.js";
+import { AgitError } from "../src/errors.js";
 import { CLAUDE_HOOK_COMMAND, CURSOR_HOOK_COMMAND } from "../src/guardfiles.js";
 import { createGitRepo } from "./helpers/git-harness.js";
 
@@ -93,6 +94,37 @@ describe("install-agent-guards", () => {
     const claude = readFileSync(join(work, "CLAUDE.md"), "utf8");
     assert.match(claude, /# Keep me/);
     assert.match(claude, /agit start <task-id>/);
+  });
+
+  test("merges into Claude settings that have comments", async () => {
+    const { work } = repo();
+    mkdirSync(join(work, ".claude"), { recursive: true });
+    writeFileSync(
+      join(work, ".claude/settings.json"),
+      `{
+  // keep this permission
+  "permissions": {
+    "allow": ["Bash(npm test:*)"],
+  },
+}
+`,
+    );
+
+    await installAgentGuardsCommand(work, { claude: true });
+
+    const config = readJson(join(work, ".claude/settings.json"));
+    assert.deepEqual(config.permissions.allow, ["Bash(npm test:*)"]);
+    assert.ok(config.permissions.deny.includes("Bash(git push:*)"));
+  });
+
+  test("refuses to overwrite unreadable Claude settings", async () => {
+    const { work } = repo();
+    mkdirSync(join(work, ".claude"), { recursive: true });
+    const path = join(work, ".claude/settings.json");
+    writeFileSync(path, "not json {{{");
+
+    await assert.rejects(() => installAgentGuardsCommand(work, { claude: true }), AgitError);
+    assert.equal(readFileSync(path, "utf8"), "not json {{{");
   });
 
   test("is idempotent", async () => {

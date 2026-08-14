@@ -32,6 +32,7 @@ describe("guard", () => {
       "git switch -c feature",
       "git cherry-pick abc123",
       "git revert HEAD",
+      "git stash",
       "git stash push",
       "git clean -fd",
       "git pull --rebase",
