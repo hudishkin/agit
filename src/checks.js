@@ -4,16 +4,31 @@ import { dirname } from "node:path";
 
 export const DEFAULT_TIMEOUT_SEC = 900;
 
+function killProcessTree(child) {
+  if (child.pid == null) {
+    return;
+  }
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // already exited
+    }
+  }
+}
+
 function runOne(cwd, command, log, timeoutSec) {
   return new Promise((resolve) => {
     log.write(`$ ${command}\n`);
 
-    const child = spawn(command, { cwd, shell: true, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, { cwd, shell: true, detached: true, stdio: ["ignore", "pipe", "pipe"] });
     let timedOut = false;
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      killProcessTree(child);
     }, timeoutSec * 1000);
 
     child.stdout.on("data", (chunk) => log.write(chunk));

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
-import { PublishFailed } from "./errors.js";
+import { PublishFailed, TaskStateError } from "./errors.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -77,7 +77,15 @@ export async function isClean(cwd) {
 }
 
 export async function fetch(cwd) {
-  return runGit(cwd, ["fetch", "origin"], { allowFail: true });
+  try {
+    return await runGit(cwd, ["fetch", "origin"]);
+  } catch (error) {
+    throw new TaskStateError(
+      "Could not fetch from origin.",
+      "Check the remote and retry.",
+      { error: error.message },
+    );
+  }
 }
 
 export async function createBranch(cwd, name, startPoint) {

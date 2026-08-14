@@ -11,6 +11,13 @@ describe("denylist", () => {
     assert.equal(matchesDenylist("credentials.json"), true);
   });
 
+  test("matches denied names regardless of case", () => {
+    assert.equal(matchesDenylist(".ENV"), true);
+    assert.equal(matchesDenylist("CREDENTIALS.JSON"), true);
+    assert.equal(matchesDenylist("secrets.PEM"), true);
+    assert.equal(matchesDenylist(".ENV.EXAMPLE"), false);
+  });
+
   test("does not match ordinary source files", () => {
     assert.equal(matchesDenylist("src/env.ts"), false);
     assert.equal(matchesDenylist("README.md"), false);
