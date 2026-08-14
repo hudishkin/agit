@@ -88,4 +88,18 @@ describe("commit", () => {
     assert.equal(payload.ok, true);
     assert.deepEqual(payload.data.files, ["note.txt"]);
   });
+
+  test("--files does not commit other staged paths", async () => {
+    const { work } = await startedRepo();
+    writeFileSync(join(work, "mine.txt"), "agent work\n");
+    writeFileSync(join(work, ".env"), "SECRET=1\n");
+    gitRun(work, ["add", ".env"]);
+
+    const result = await commitCommand(work, "AUTH-123: add mine", { files: ["mine.txt"] });
+
+    assert.deepEqual(result.files, ["mine.txt"]);
+    const tracked = gitRun(work, ["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert.match(tracked, /mine\.txt/);
+    assert.doesNotMatch(tracked, /\.env/);
+  });
 });

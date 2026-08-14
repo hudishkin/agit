@@ -4,13 +4,14 @@ import { PublishFailed } from "./errors.js";
 
 const execFileAsync = promisify(execFile);
 
-export async function createDraftPr(cwd, { base, head, title, body }) {
+export async function createDraftPr(cwd, { base, head, title, body, repo }) {
+  const args = ["pr", "create", "--draft", "--base", base, "--head", head, "--title", title, "--body", body];
+  if (repo) {
+    args.push("--repo", repo);
+  }
+
   try {
-    const { stdout } = await execFileAsync(
-      "gh",
-      ["pr", "create", "--draft", "--base", base, "--head", head, "--title", title, "--body", body],
-      { cwd, encoding: "utf8" },
-    );
+    const { stdout } = await execFileAsync("gh", args, { cwd, encoding: "utf8" });
     const url = stdout
       .trim()
       .split("\n")

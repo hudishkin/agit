@@ -208,11 +208,14 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
   const body = renderPrBody({ taskId, branch: task.branch, summary, checks, files });
 
   try {
+    const repo =
+      profile.repo.owner && profile.repo.name ? `${profile.repo.owner}/${profile.repo.name}` : undefined;
     const prUrl = await createPr(cwd, {
       base: profile.pr.base ?? profile.repo.default_branch,
       head: task.branch,
       title,
       body,
+      repo,
     });
     task.publish = { ...(task.publish ?? {}), pushed: true, pr_url: prUrl };
     task.status = "pr_created";
