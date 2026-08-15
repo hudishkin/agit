@@ -1,6 +1,6 @@
 {
   "name": "@hudishkin/agit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A boring, reviewable handoff from a coding agent to a draft pull request",
   "type": "module",
   "bin": {

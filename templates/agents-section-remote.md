@@ -3,6 +3,12 @@
 
 This repository uses `agit` so an agent can work locally and cannot publish.
 
+Start the task branch (you may run this):
+
+```bash
+agit start <task-id>
+```
+
 Local Git is allowed: commit, branch, history, `status`, `diff`, `log`.
 
 Do not push. Do not create or merge pull requests. Do not pass `--no-verify`.

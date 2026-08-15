@@ -50,6 +50,7 @@ describe("install-agent-guards", () => {
     const entry = config.hooks.beforeShellExecution.find((item) => item.command === CURSOR_HOOK_COMMAND);
     assert.ok(entry, "guard entry is missing");
     assert.equal(entry.failClosed, true);
+    assert.equal(entry.matcher, "git|gh|agit");
 
     const script = join(work, ".cursor/hooks/agit-guard.sh");
     assert.match(readFileSync(script, "utf8"), /guard --vendor cursor/);
@@ -73,7 +74,7 @@ describe("install-agent-guards", () => {
   test("remote enforcement writes a narrower Claude deny list", async () => {
     const { work } = repo();
 
-    await installAgentGuardsCommand(work, { claude: true, enforcement: "remote" });
+    await installAgentGuardsCommand(work, { claude: true, cursor: true, enforcement: "remote" });
 
     const config = readJson(join(work, ".claude/settings.json"));
     assert.ok(config.permissions.deny.includes("Bash(git push:*)"));
@@ -81,6 +82,7 @@ describe("install-agent-guards", () => {
     assert.ok(config.permissions.deny.includes("Bash(agit finish:*)"));
     assert.equal(config.permissions.deny.includes("Bash(git commit:*)"), false);
     assert.match(readFileSync(join(work, "CLAUDE.md"), "utf8"), /Local Git is allowed/);
+    assert.match(readFileSync(join(work, ".cursor/rules/agit.mdc"), "utf8"), /Local git is allowed; do not publish/);
   });
 
   test("switching to remote removes protocol-only Claude deny rules", async () => {

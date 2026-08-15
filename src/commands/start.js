@@ -14,12 +14,21 @@ import {
   revParse,
 } from "../git.js";
 import { isolationEnabled, syncMirror } from "../mirror.js";
-import { loadProfile, profileExists } from "../profile.js";
+import { enforcementOf, loadProfile, profileExists } from "../profile.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
 
 const PUBLISHED = new Set(["pushed", "pr_created"]);
 
-function nextHint(taskId) {
+function nextHint(taskId, enforcement) {
+  if (enforcement === "remote") {
+    return [
+      `Task started: ${taskId}`,
+      `Work with local git. Do not push.`,
+      `A human publishes with:`,
+      `  agit finish ${taskId}`,
+    ].join("\n");
+  }
+
   return [
     `Task started: ${taskId}`,
     `Work normally, but do not use git push directly.`,
@@ -124,7 +133,7 @@ export async function startCommand(cwd, taskId) {
       base: task.base_ref,
       resumed: true,
       status: task.status,
-      message: `${wasAborted ? "Restarted aborted" : "Resumed"} task ${taskId} on ${task.branch}.\n${nextHint(taskId)}`,
+      message: `${wasAborted ? "Restarted aborted" : "Resumed"} task ${taskId} on ${task.branch}.\n${nextHint(taskId, enforcementOf(profile))}`,
     };
   }
 
@@ -156,6 +165,6 @@ export async function startCommand(cwd, taskId) {
     base: startPoint,
     resumed: false,
     status: "started",
-    message: [note, nextHint(taskId)].filter(Boolean).join("\n"),
+    message: [note, nextHint(taskId, enforcementOf(profile))].filter(Boolean).join("\n"),
   };
 }
