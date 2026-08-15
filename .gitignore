@@ -5,3 +5,4 @@ docs/
 .agit/tasks/
 .agit/logs/
 .agit/mirror.git/
+.agit/worktrees/

@@ -134,6 +134,7 @@ describe("guard", () => {
       "gh repo delete acme/x",
       "agit finish AUTH-1",
       "npx agit finish AUTH-1",
+      "git worktree add ../other",
     ]) {
       assert.equal(classifyCommand(command, remote).decision, "deny", command);
     }

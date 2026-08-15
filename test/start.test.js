@@ -6,10 +6,10 @@ import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { DirtyTree, NotInitialized, TaskStateError } from "../src/errors.js";
+import { NotInitialized, TaskStateError } from "../src/errors.js";
 import { currentBranch } from "../src/git.js";
 import { loadTask } from "../src/taskstore.js";
-import { createGitRepo, gitRun } from "./helpers/git-harness.js";
+import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
 const repos = [];
@@ -40,11 +40,13 @@ describe("start", () => {
     await assert.rejects(() => startCommand(work, "AUTH-123"), NotInitialized);
   });
 
-  test("rejects a dirty tree", async () => {
+  test("starts even when the main checkout is dirty", async () => {
     const { work } = await readyRepo();
     writeFileSync(join(work, "dirty.txt"), "nope\n");
 
-    await assert.rejects(() => startCommand(work, "AUTH-123"), DirtyTree);
+    const result = await startCommand(work, "AUTH-123");
+    assert.equal(await currentBranch(work), "main");
+    assert.equal(await currentBranch(result.path), "agit/AUTH-123");
   });
 
   test("rejects an invalid task id", async () => {
@@ -59,16 +61,20 @@ describe("start", () => {
     await assert.rejects(() => startCommand(work, "AUTH-123"), /Could not fetch from origin/);
   });
 
-  test("creates a local task branch without pushing", async () => {
+  test("creates a local task worktree without pushing", async () => {
     const { work, origin } = await readyRepo();
     const result = await startCommand(work, "AUTH-123");
 
     assert.equal(result.branch, "agit/AUTH-123");
     assert.equal(result.resumed, false);
-    assert.equal(await currentBranch(work), "agit/AUTH-123");
+    assert.equal(result.path, taskWork(work, "AUTH-123"));
+    assert.equal(await currentBranch(work), "main");
+    assert.equal(await currentBranch(result.path), "agit/AUTH-123");
     assert.equal(loadTask(work, "AUTH-123").status, "started");
+    assert.equal(loadTask(work, "AUTH-123").worktree, ".agit/worktrees/AUTH-123");
     assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
     assert.match(result.message, /A human publishes/);
+    assert.match(result.message, /Work in:/);
     assert.doesNotMatch(result.message, /agit commit -m/);
   });
 
@@ -83,13 +89,15 @@ describe("start", () => {
     assert.match(result.message, /agit finish AUTH-123/);
   });
 
-  test("resumes the same clean task", async () => {
+  test("resumes the same task without switching the main checkout", async () => {
     const { work } = await readyRepo();
-    await startCommand(work, "AUTH-123");
+    const first = await startCommand(work, "AUTH-123");
     const again = await startCommand(work, "AUTH-123");
 
     assert.equal(again.resumed, true);
-    assert.equal(await currentBranch(work), "agit/AUTH-123");
+    assert.equal(again.path, first.path);
+    assert.equal(await currentBranch(work), "main");
+    assert.equal(await currentBranch(again.path), "agit/AUTH-123");
   });
 
   test("CLI start --json prints task state", async () => {
@@ -102,5 +110,6 @@ describe("start", () => {
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, true);
     assert.equal(payload.data.branch, "agit/AUTH-123");
+    assert.equal(payload.data.path, taskWork(work, "AUTH-123"));
   });
 });

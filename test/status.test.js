@@ -9,7 +9,7 @@ import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { statusCommand } from "../src/commands/status.js";
 import { TaskStateError } from "../src/errors.js";
-import { createGitRepo, gitRun } from "./helpers/git-harness.js";
+import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
 const repos = [];
@@ -43,13 +43,15 @@ describe("status", () => {
   test("shows started and committed state", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "AUTH-123");
+    const tree = taskWork(work, "AUTH-123");
 
-    const started = await statusCommand(work);
+    const started = await statusCommand(tree);
     assert.equal(started.status, "started");
     assert.equal(started.pushed, false);
+    assert.equal(started.path, tree);
 
-    writeFileSync(join(work, "note.txt"), "ok\n");
-    await commitCommand(work, "AUTH-123: add note");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
 
     const committed = await statusCommand(work, "AUTH-123");
     assert.equal(committed.status, "committed");
@@ -60,7 +62,7 @@ describe("status", () => {
     const { work } = await readyRepo();
     await startCommand(work, "AUTH-123");
 
-    const result = spawnSync(process.execPath, [bin, "status", "--json", "-C", work], {
+    const result = spawnSync(process.execPath, [bin, "status", "AUTH-123", "--json", "-C", work], {
       encoding: "utf8",
     });
 
@@ -69,5 +71,19 @@ describe("status", () => {
     assert.equal(payload.ok, true);
     assert.equal(payload.data.task_id, "AUTH-123");
     assert.equal(payload.data.status, "started");
+  });
+
+  test("status --all lists every task", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "A1");
+    await startCommand(work, "A2");
+
+    const result = await statusCommand(work, undefined, { all: true });
+    assert.deepEqual(
+      result.tasks.map((task) => task.task_id),
+      ["A1", "A2"],
+    );
+    assert.equal(result.tasks[0].path, taskWork(work, "A1"));
+    assert.equal(result.tasks[1].worktree_exists, true);
   });
 });

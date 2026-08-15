@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -54,6 +54,11 @@ export function gitPushSetup(cwd, args) {
 }
 
 // A second working copy of the same origin, for changes that arrive from other people.
+export function taskWork(work, taskId) {
+  const base = existsSync(work) ? realpathSync(work) : work;
+  return join(base, ".agit/worktrees", taskId);
+}
+
 export function cloneRepo({ root, origin }, name = "other") {
   const path = join(root, name);
   git(root, ["clone", origin, path]);

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { runChecks } from "../checks.js";
 import { ChecksFailed, DirtyTree, NotInitialized, PublishFailed, TaskStateError, WrongBranch } from "../errors.js";
@@ -17,10 +18,12 @@ import {
   revParse,
   squashCommits,
 } from "../git.js";
+import { withTaskLock } from "../lock.js";
 import { isolationEnabled, publishUrl, syncMirror, updateMirrorBranch } from "../mirror.js";
 import { LOGS_DIR } from "../paths.js";
 import { formatTitle, renderPrBody, summarizeCommit } from "../prbody.js";
 import { loadProfile, profileExists } from "../profile.js";
+import { agitRoot, resolveTaskTree } from "../root.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
 
 function shouldSquash(profile, squash) {
@@ -66,7 +69,8 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
     throw new NotInitialized("agit is not initialized.");
   }
 
-  if (!taskExists(cwd, taskId)) {
+  const root = await agitRoot(cwd);
+  if (!taskExists(root, taskId)) {
     throw new TaskStateError(`Task ${taskId} was not found.`, "Run agit start <task-id> first.");
   }
 
@@ -76,180 +80,190 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
     await syncMirror(cwd, profile);
   }
 
-  const task = loadTask(cwd, taskId);
-  const branch = await currentBranch(cwd);
-  const wasPushed = Boolean(task.publish?.pushed);
-
-  if (shouldSquash(profile, squash) && wasPushed) {
-    throw new TaskStateError(
-      "Cannot squash after the branch was pushed.",
-      "Do not force-push. Open a new task if you need a squashed history.",
-    );
-  }
-
-  if (branch === profile.repo.default_branch) {
-    throw new WrongBranch(`Refusing to finish on ${branch}.`);
-  }
-
-  if (branch !== task.branch) {
-    throw new WrongBranch(`Current branch ${branch} does not match task ${taskId}.`);
-  }
-
-  if (!(await isClean(cwd))) {
-    throw new DirtyTree("Working tree is not clean.");
-  }
-
-  const head = await revParse(cwd, "HEAD");
-  const publishedSha = task.publish?.pushed_sha ?? null;
-  const existingPr = task.publish?.pr_url ?? null;
-
-  if (wasPushed && existingPr && publishedSha === head) {
-    return {
-      task_id: taskId,
-      branch: task.branch,
-      pr_url: existingPr,
-      pushed: true,
-      already: true,
-      status: "pr_created",
-      message: `Draft PR already up to date:\n${existingPr}`,
-    };
-  }
-
-  const base = await resolveBase(cwd, task, profile);
-  const ahead = await logOneline(cwd, `${base}..HEAD`);
-  if (ahead.length === 0) {
-    throw new TaskStateError("Nothing to publish.", "Run agit commit first.");
-  }
-
-  const needsPush = !wasPushed || publishedSha !== head;
-
-  if (needsPush) {
-    const logPath = join(cwd, LOGS_DIR, `${taskId}-checks.log`);
-    const checkResults = await runChecks(cwd, profile.checks ?? [], logPath, {
-      timeoutSec: profile.checks_timeout_sec,
-    });
-    const failed = checkResults.filter((check) => !check.ok);
-    task.checks = { last_status: failed.length ? "failed" : "passed", results: checkResults };
-
-    if (failed.length > 0) {
-      task.status = "checks_failed";
-      saveTask(cwd, task);
-      throw new ChecksFailed(
-        "Finish failed: checks did not pass.",
-        `Fix the errors and run agit finish ${taskId} again.`,
-        { failed: failed.map((check) => check.command) },
+  return withTaskLock(root, taskId, async () => {
+    const task = loadTask(root, taskId);
+    const tree = resolveTaskTree(root, task, cwd);
+    if (task.worktree && !existsSync(tree)) {
+      throw new TaskStateError(
+        `Task ${taskId} worktree is missing.`,
+        `Run agit start ${taskId} to recreate it.`,
       );
     }
 
-    if (!(await isClean(cwd))) {
-      saveTask(cwd, task);
-      throw new DirtyTree(
-        "Checks passed, but they left the working tree dirty.",
-        "Commit the check output with agit commit, or restore the files, then run agit finish again.",
+    const branch = await currentBranch(tree);
+    const wasPushed = Boolean(task.publish?.pushed);
+
+    if (shouldSquash(profile, squash) && wasPushed) {
+      throw new TaskStateError(
+        "Cannot squash after the branch was pushed.",
+        "Do not force-push. Open a new task if you need a squashed history.",
       );
     }
 
-    if (shouldSquash(profile, squash)) {
-      const subject = await firstCommitSubject(cwd, base);
-      const hash = await squashCommits(cwd, base, subject);
-      task.commits = [hash];
-      saveTask(cwd, task);
+    if (branch === profile.repo.default_branch) {
+      throw new WrongBranch(`Refusing to finish on ${branch}.`);
     }
 
-    if (wasPushed) {
-      const publishedRemote = isolated ? await publishUrl(cwd, profile) : "origin";
-      const remoteSha = await remoteBranchSha(cwd, task.branch, publishedRemote);
-      if (remoteSha && !(await isAncestor(cwd, remoteSha, "HEAD"))) {
-        throw new TaskStateError(
-          "The task branch has diverged from what was already published.",
-          "agit never force-pushes. Reconcile locally, or open a new task id.",
+    if (branch !== task.branch) {
+      throw new WrongBranch(`Current branch ${branch} does not match task ${taskId}.`);
+    }
+
+    if (!(await isClean(tree))) {
+      throw new DirtyTree("Working tree is not clean.");
+    }
+
+    const head = await revParse(tree, "HEAD");
+    const publishedSha = task.publish?.pushed_sha ?? null;
+    const existingPr = task.publish?.pr_url ?? null;
+
+    if (wasPushed && existingPr && publishedSha === head) {
+      return {
+        task_id: taskId,
+        branch: task.branch,
+        pr_url: existingPr,
+        pushed: true,
+        already: true,
+        status: "pr_created",
+        message: `Draft PR already up to date:\n${existingPr}`,
+      };
+    }
+
+    const base = await resolveBase(tree, task, profile);
+    const ahead = await logOneline(tree, `${base}..HEAD`);
+    if (ahead.length === 0) {
+      throw new TaskStateError("Nothing to publish.", "Run agit commit first.");
+    }
+
+    const needsPush = !wasPushed || publishedSha !== head;
+
+    if (needsPush) {
+      const logPath = join(root, LOGS_DIR, `${taskId}-checks.log`);
+      const checkResults = await runChecks(tree, profile.checks ?? [], logPath, {
+        timeoutSec: profile.checks_timeout_sec,
+      });
+      const failed = checkResults.filter((check) => !check.ok);
+      task.checks = { last_status: failed.length ? "failed" : "passed", results: checkResults };
+
+      if (failed.length > 0) {
+        task.status = "checks_failed";
+        saveTask(root, task);
+        throw new ChecksFailed(
+          "Finish failed: checks did not pass.",
+          `Fix the errors and run agit finish ${taskId} again.`,
+          { failed: failed.map((check) => check.command) },
         );
       }
+
+      if (!(await isClean(tree))) {
+        saveTask(root, task);
+        throw new DirtyTree(
+          "Checks passed, but they left the working tree dirty.",
+          "Commit the check output with agit commit, or restore the files, then run agit finish again.",
+        );
+      }
+
+      if (shouldSquash(profile, squash)) {
+        const subject = await firstCommitSubject(tree, base);
+        const hash = await squashCommits(tree, base, subject);
+        task.commits = [hash];
+        saveTask(root, task);
+      }
+
+      if (wasPushed) {
+        const publishedRemote = isolated ? await publishUrl(cwd, profile) : "origin";
+        const remoteSha = await remoteBranchSha(tree, task.branch, publishedRemote);
+        if (remoteSha && !(await isAncestor(tree, remoteSha, "HEAD"))) {
+          throw new TaskStateError(
+            "The task branch has diverged from what was already published.",
+            "agit never force-pushes. Reconcile locally, or open a new task id.",
+          );
+        }
+      }
+
+      try {
+        const target = isolated ? await publishUrl(cwd, profile) : undefined;
+        await push(tree, task.branch, { allow: true, url: target });
+        if (isolated) {
+          await updateMirrorBranch(root, task.branch, await revParse(tree, "HEAD"));
+        }
+      } catch (error) {
+        saveTask(root, task);
+        if (error instanceof PublishFailed) {
+          throw error;
+        }
+        throw new PublishFailed("git push failed.", `Fix the remote error and run agit finish ${taskId} again.`, {
+          error: error.message,
+        });
+      }
+
+      task.publish = {
+        ...(task.publish ?? {}),
+        pushed: true,
+        pushed_sha: await revParse(tree, "HEAD"),
+        pr_url: existingPr,
+      };
+      task.status = existingPr ? "pr_created" : "pushed";
+      saveTask(root, task);
     }
 
+    const files = await diffNames(tree, `${base}...HEAD`);
+    const checks = task.checks?.results ?? [];
+
+    if (existingPr) {
+      return {
+        task_id: taskId,
+        branch: task.branch,
+        pr_url: existingPr,
+        pushed: true,
+        already: false,
+        status: "pr_created",
+        files,
+        checks,
+        message: `Pushed ${task.branch}\nUpdated draft PR:\n${existingPr}`,
+      };
+    }
+
+    const subject = await commitSubject(tree);
+    const summary = summarizeCommit(taskId, subject);
+    const title = formatTitle(profile.pr.title_template, taskId, summary);
+    const body = renderPrBody({ taskId, branch: task.branch, summary, checks, files });
+
     try {
-      const target = isolated ? await publishUrl(cwd, profile) : undefined;
-      await push(cwd, task.branch, { allow: true, url: target });
-      if (isolated) {
-        await updateMirrorBranch(cwd, task.branch, await revParse(cwd, "HEAD"));
-      }
+      const repo =
+        profile.repo.owner && profile.repo.name ? `${profile.repo.owner}/${profile.repo.name}` : undefined;
+      const prUrl = await createPr(tree, {
+        base: profile.pr.base ?? profile.repo.default_branch,
+        head: task.branch,
+        title,
+        body,
+        repo,
+      });
+      task.publish = { ...(task.publish ?? {}), pushed: true, pr_url: prUrl };
+      task.status = "pr_created";
+      saveTask(root, task);
+
+      return {
+        task_id: taskId,
+        branch: task.branch,
+        pr_url: prUrl,
+        pushed: true,
+        already: false,
+        status: "pr_created",
+        files,
+        checks,
+        message: `Pushed ${task.branch}\nDraft PR created:\n${prUrl}`,
+      };
     } catch (error) {
-      saveTask(cwd, task);
+      task.status = "pushed";
+      saveTask(root, task);
       if (error instanceof PublishFailed) {
         throw error;
       }
-      throw new PublishFailed("git push failed.", `Fix the remote error and run agit finish ${taskId} again.`, {
-        error: error.message,
-      });
+      throw new PublishFailed(
+        "Checks passed, but remote publish failed.",
+        `Run agit finish ${taskId} again later.`,
+        { error: error.message },
+      );
     }
-
-    task.publish = {
-      ...(task.publish ?? {}),
-      pushed: true,
-      pushed_sha: await revParse(cwd, "HEAD"),
-      pr_url: existingPr,
-    };
-    task.status = existingPr ? "pr_created" : "pushed";
-    saveTask(cwd, task);
-  }
-
-  const files = await diffNames(cwd, `${base}...HEAD`);
-  const checks = task.checks?.results ?? [];
-
-  if (existingPr) {
-    return {
-      task_id: taskId,
-      branch: task.branch,
-      pr_url: existingPr,
-      pushed: true,
-      already: false,
-      status: "pr_created",
-      files,
-      checks,
-      message: `Pushed ${task.branch}\nUpdated draft PR:\n${existingPr}`,
-    };
-  }
-
-  const subject = await commitSubject(cwd);
-  const summary = summarizeCommit(taskId, subject);
-  const title = formatTitle(profile.pr.title_template, taskId, summary);
-  const body = renderPrBody({ taskId, branch: task.branch, summary, checks, files });
-
-  try {
-    const repo =
-      profile.repo.owner && profile.repo.name ? `${profile.repo.owner}/${profile.repo.name}` : undefined;
-    const prUrl = await createPr(cwd, {
-      base: profile.pr.base ?? profile.repo.default_branch,
-      head: task.branch,
-      title,
-      body,
-      repo,
-    });
-    task.publish = { ...(task.publish ?? {}), pushed: true, pr_url: prUrl };
-    task.status = "pr_created";
-    saveTask(cwd, task);
-
-    return {
-      task_id: taskId,
-      branch: task.branch,
-      pr_url: prUrl,
-      pushed: true,
-      already: false,
-      status: "pr_created",
-      files,
-      checks,
-      message: `Pushed ${task.branch}\nDraft PR created:\n${prUrl}`,
-    };
-  } catch (error) {
-    task.status = "pushed";
-    saveTask(cwd, task);
-    if (error instanceof PublishFailed) {
-      throw error;
-    }
-    throw new PublishFailed(
-      "Checks passed, but remote publish failed.",
-      `Run agit finish ${taskId} again later.`,
-      { error: error.message },
-    );
-  }
+  });
 }

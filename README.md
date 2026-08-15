@@ -6,7 +6,7 @@ The agent works in your clone. It cannot publish. You finish into one draft pull
 
 ```bash
 agit start AUTH-123
-# the agent edits and commits with git
+# open the printed path in another window; the agent edits and commits with git
 agit finish AUTH-123
 ```
 
@@ -37,10 +37,10 @@ With `--mode protocol`, git mutations are redirected to agit instead of being le
 
 | Command | What happens |
 | --- | --- |
-| `agit start <task-id>` | Creates a local `agit/<task-id>` branch from `origin/<default>`. No push. |
-| `agit commit -m "..."` | Commits locally. Prints the file list. Blocks secrets. Never pushes. Optional in `remote`. |
-| `agit finish <task-id>` | Runs your checks. If they pass: push and a **draft PR**. Review fixes go to the same PR. In `remote`, a human runs this. |
-| `agit status` | Prints task state as text or `--json` for the agent. |
+| `agit start <task-id>` | Creates `.agit/worktrees/<task-id>` on `agit/<task-id>` from `origin/<default>`. The main checkout stays put. Prints the path. No push. |
+| `agit commit -m "..."` | Commits locally in the task worktree. Prints the file list. Blocks secrets. Never pushes. Optional in `remote`. |
+| `agit finish <task-id>` | Runs your checks in that worktree. If they pass: push and a **draft PR**. Works from the main checkout. Review fixes go to the same PR. In `remote`, a human runs this. |
+| `agit status` | Prints task state as text or `--json`. `--all` lists every task and its path. |
 
 Read-only Git stays allowed: `git status`, `git diff`, `git log`. In `remote`, local mutating git is allowed too.
 
@@ -72,7 +72,7 @@ Or keep it in the repo so agents can find it with `npx`:
 npm i -D @hudishkin/agit
 npx agit init --yes --checks "npm test"
 agit start AUTH-123
-# the agent changes code and commits with git
+# the agent works in the printed path and commits with git
 agit finish AUTH-123
 ```
 
@@ -99,7 +99,7 @@ To keep the protocol workflow, where the agent commits and finishes through agit
 ```bash
 npx agit init --yes --mode protocol --checks "npm test"
 agit start AUTH-123
-# change code; git diff and git status are fine
+# change code in the printed path; git diff and git status are fine
 agit commit -m "AUTH-123: fix login validation"
 agit finish AUTH-123
 ```
@@ -112,7 +112,7 @@ agit prompt AUTH-123
 
 ## Who this is for
 
-People who already let a coding agent change code in a real repository, and want publish to stay with a human: one branch, one draft PR, and checks before push.
+People who already let a coding agent change code in a real repository, and want publish to stay with a human: one branch, one draft PR, and checks before push. Several agents can run at once: each `start` gets its own worktree under `.agit/worktrees/`.
 
 `remote` is the default. `protocol` is for teams that want the agent to drive `start` / `commit` / `finish`.
 
@@ -157,12 +157,13 @@ That restores `origin` to the real remote. The mirror directory is kept.
 ```text
 agit init [--mode remote|protocol|patch]
                             Prepare this repository (default: remote)
-agit start <task-id>        Create or resume a task branch
+agit start <task-id>        Create or resume a task worktree
 agit commit -m "..."        Local commit, never a push
 agit commit --files a b     Commit only these paths
 agit finish <task-id>       Checks → push → draft PR (same PR on later runs)
 agit finish --squash        Squash commits before the first push
 agit status [task-id]       Task state
+agit status --all           Every task and its worktree path
 agit abort <task-id>        Drop a local task (not after publish)
 agit doctor                 Report which protection layers are active
 agit protect [--apply]      Show or create the GitHub ruleset

@@ -3,11 +3,13 @@
 
 This repository uses `agit` so an agent can work locally and cannot publish.
 
-Start the task branch (you may run this):
+Start the task (you may run this):
 
 ```bash
 agit start <task-id>
 ```
+
+Work only in the path `start` printed (`.agit/worktrees/<task-id>`). Do not run `git worktree`.
 
 Local Git is allowed: commit, branch, history, `status`, `diff`, `log`.
 

@@ -6,7 +6,7 @@ import { commitCommand } from "../src/commands/commit.js";
 import { finishCommand } from "../src/commands/finish.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { createGitRepo, gitRun } from "./helpers/git-harness.js";
+import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
 
 const repos = [];
 
@@ -28,10 +28,11 @@ describe("hooks", () => {
     gitRun(work, ["add", "-A"]);
     gitRun(work, ["commit", "-m", "chore: init agit"]);
     await startCommand(work, "AUTH-123");
-    writeFileSync(join(work, "note.txt"), "ok\n");
-    await commitCommand(work, "AUTH-123: add note");
+    const tree = taskWork(work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
 
-    assert.throws(() => gitRun(work, ["push", "-u", "origin", "agit/AUTH-123"]));
+    assert.throws(() => gitRun(tree, ["push", "-u", "origin", "agit/AUTH-123"]));
     assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
 
     await finishCommand(work, "AUTH-123", {

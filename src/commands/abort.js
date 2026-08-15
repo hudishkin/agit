@@ -1,6 +1,9 @@
+import { existsSync } from "node:fs";
 import { DirtyTree, NotInitialized, TaskStateError } from "../errors.js";
-import { checkout, currentBranch, isClean, isRepo } from "../git.js";
-import { loadProfile, profileExists } from "../profile.js";
+import { isClean, isRepo, removeWorktree } from "../git.js";
+import { withTaskLock } from "../lock.js";
+import { profileExists } from "../profile.js";
+import { agitRoot, resolveTaskTree } from "../root.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
 
 export async function abortCommand(cwd, taskId) {
@@ -14,35 +17,40 @@ export async function abortCommand(cwd, taskId) {
     throw new NotInitialized("agit is not initialized.");
   }
 
-  if (!taskExists(cwd, taskId)) {
+  const root = await agitRoot(cwd);
+  if (!taskExists(root, taskId)) {
     throw new TaskStateError(`Task ${taskId} was not found.`, "Run agit start <task-id> first.");
   }
 
-  const task = loadTask(cwd, taskId);
-  if (task.publish?.pushed || task.status === "pr_created" || task.status === "pushed") {
-    throw new TaskStateError(
-      `Task ${taskId} was already published.`,
-      "Close the pull request yourself. agit abort will not delete a remote branch.",
-    );
-  }
+  return withTaskLock(root, taskId, async () => {
+    const task = loadTask(root, taskId);
+    if (task.publish?.pushed || task.status === "pr_created" || task.status === "pushed") {
+      throw new TaskStateError(
+        `Task ${taskId} was already published.`,
+        "Close the pull request yourself. agit abort will not delete a remote branch.",
+      );
+    }
 
-  if (!(await isClean(cwd))) {
-    throw new DirtyTree("Working tree is not clean.");
-  }
+    const tree = resolveTaskTree(root, task, cwd);
+    if (existsSync(tree) && tree !== root) {
+      if (!(await isClean(tree))) {
+        throw new DirtyTree("Working tree is not clean.");
+      }
+      await removeWorktree(root, tree);
+    } else if (tree === root || !task.worktree) {
+      if (!(await isClean(cwd))) {
+        throw new DirtyTree("Working tree is not clean.");
+      }
+    }
 
-  const profile = loadProfile(cwd);
-  const current = await currentBranch(cwd);
-  if (current === task.branch) {
-    await checkout(cwd, profile.repo.default_branch);
-  }
+    task.status = "aborted";
+    saveTask(root, task);
 
-  task.status = "aborted";
-  saveTask(cwd, task);
-
-  return {
-    task_id: taskId,
-    branch: task.branch,
-    status: "aborted",
-    message: `Aborted ${taskId}. Remote was not changed.`,
-  };
+    return {
+      task_id: taskId,
+      branch: task.branch,
+      status: "aborted",
+      message: `Aborted ${taskId}. Remote was not changed.`,
+    };
+  });
 }

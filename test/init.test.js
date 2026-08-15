@@ -65,6 +65,7 @@ describe("init", () => {
     assert.match(readFileSync(join(work, "AGENTS.md"), "utf8"), /Local Git is allowed/);
     assert.match(readFileSync(join(work, ".gitignore"), "utf8"), /\.agit\/tasks\//);
     assert.match(readFileSync(join(work, ".gitignore"), "utf8"), /\.agit\/mirror\.git\//);
+    assert.match(readFileSync(join(work, ".gitignore"), "utf8"), /\.agit\/worktrees\//);
     assert.equal(existsSync(join(work, ".agit/setup-agent.sh")), true);
     assert.equal(existsSync(join(work, ".github/pull_request_template.md")), true);
     assert.equal(existsSync(join(work, ".cursor/rules/agit.mdc")), true);

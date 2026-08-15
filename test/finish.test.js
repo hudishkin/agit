@@ -9,12 +9,12 @@ import { commitCommand } from "../src/commands/commit.js";
 import { finishCommand } from "../src/commands/finish.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError, WrongBranch } from "../src/errors.js";
+import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError } from "../src/errors.js";
 import { createDraftPr } from "../src/gh.js";
-import { logOneline } from "../src/git.js";
+import { currentBranch, logOneline } from "../src/git.js";
 import { loadProfile, saveProfile } from "../src/profile.js";
 import { loadTask } from "../src/taskstore.js";
-import { createGitRepo, gitRun } from "./helpers/git-harness.js";
+import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
 const repos = [];
@@ -41,8 +41,9 @@ async function readyTask({ checks = ["true"] } = {}) {
   gitRun(created.work, ["add", "-A"]);
   gitRun(created.work, ["commit", "-m", "chore: init agit"]);
   await startCommand(created.work, "AUTH-123");
-  writeFileSync(join(created.work, "note.txt"), "ok\n");
-  await commitCommand(created.work, "AUTH-123: add note");
+  created.tree = taskWork(created.work, "AUTH-123");
+  writeFileSync(join(created.tree, "note.txt"), "ok\n");
+  await commitCommand(created.tree, "AUTH-123: add note");
   return created;
 }
 
@@ -158,11 +159,14 @@ describe("finish", () => {
     assert.equal(calls.length, 2);
   });
 
-  test("refuses to finish on the default branch", async () => {
-    const { work } = await readyTask();
-    gitRun(work, ["checkout", "main"]);
+  test("finish from the main checkout publishes the task worktree", async () => {
+    const { work, origin } = await readyTask();
+    const gh = fakePr();
 
-    await assert.rejects(() => finishCommand(work, "AUTH-123", fakePr()), WrongBranch);
+    const result = await finishCommand(work, "AUTH-123", gh);
+    assert.equal(result.pr_url, "https://github.com/acme/backend/pull/1");
+    assert.match(gitRun(origin, ["branch"]), /agit\/AUTH-123/);
+    assert.equal(await currentBranch(work), "main");
   });
 
   test("refuses to finish without commits", async () => {
@@ -191,13 +195,13 @@ describe("finish", () => {
   });
 
   test("squashes commits before the first push", async () => {
-    const { work } = await readyTask();
-    writeFileSync(join(work, "note2.txt"), "two\n");
-    await commitCommand(work, "AUTH-123: second change");
-    assert.equal((await logOneline(work, "main..HEAD")).length, 2);
+    const { work, tree } = await readyTask();
+    writeFileSync(join(tree, "note2.txt"), "two\n");
+    await commitCommand(tree, "AUTH-123: second change");
+    assert.equal((await logOneline(tree, "main..HEAD")).length, 2);
 
     await finishCommand(work, "AUTH-123", { ...fakePr(), squash: true });
-    assert.equal((await logOneline(work, "main..HEAD")).length, 1);
+    assert.equal((await logOneline(tree, "main..HEAD")).length, 1);
     assert.equal(loadTask(work, "AUTH-123").commits.length, 1);
   });
 

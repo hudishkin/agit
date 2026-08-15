@@ -3,6 +3,7 @@ import { isRepo } from "../git.js";
 import { ensureGitignore } from "../gitignore.js";
 import { disableIsolation, enableIsolation, inspectIsolation } from "../mirror.js";
 import { loadProfile, profileExists } from "../profile.js";
+import { agitRoot } from "../root.js";
 
 export async function isolateCommand(cwd, { undo = false } = {}) {
   if (!(await isRepo(cwd))) {
@@ -43,7 +44,7 @@ export async function isolateCommand(cwd, { undo = false } = {}) {
 
   try {
     const { mirror, push_url, already } = await enableIsolation(cwd, profile);
-    ensureGitignore(cwd);
+    ensureGitignore(await agitRoot(cwd));
 
     return {
       isolated: true,
