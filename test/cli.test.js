@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const bin = join(root, "bin", "agit.js");
+const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 function runAgit(args) {
   return spawnSync(process.execPath, [bin, ...args], {
@@ -28,6 +31,6 @@ describe("agit cli", () => {
     const result = runAgit(["--version"]);
 
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /^0\.1\.0\n$/);
+    assert.equal(result.stdout, `${pkg.version}\n`);
   });
 });
