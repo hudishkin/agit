@@ -2,6 +2,7 @@ import { findDeniedFiles } from "../denylist.js";
 import { DenylistHit, EmptyCommit, NotInitialized, WrongBranch } from "../errors.js";
 import { add, commit, currentBranch, isRepo, listCommitCandidates } from "../git.js";
 import { loadProfile, profileExists } from "../profile.js";
+import { agitRoot } from "../root.js";
 import { scanFilesForSecrets } from "../secretscan.js";
 import { loadTask, saveTask, taskExists } from "../taskstore.js";
 
@@ -47,6 +48,7 @@ export async function commitCommand(cwd, message, { files: requested } = {}) {
     throw new EmptyCommit("Commit message is required.", 'Run: agit commit -m "<task-id>: <summary>"');
   }
 
+  const root = await agitRoot(cwd);
   const profile = loadProfile(cwd);
   const branch = await currentBranch(cwd);
 
@@ -55,11 +57,11 @@ export async function commitCommand(cwd, message, { files: requested } = {}) {
   }
 
   const taskId = taskIdFromBranch(branch, profile.workflow.branch_prefix);
-  if (!taskId || !taskExists(cwd, taskId)) {
+  if (!taskId || !taskExists(root, taskId)) {
     throw new WrongBranch(`No agit task for branch ${branch}.`, "Run agit start <task-id> first.");
   }
 
-  const task = loadTask(cwd, taskId);
+  const task = loadTask(root, taskId);
   if (task.branch !== branch) {
     throw new WrongBranch(`Current branch ${branch} does not match task ${taskId}.`);
   }
@@ -95,7 +97,7 @@ export async function commitCommand(cwd, message, { files: requested } = {}) {
   const hash = await commit(cwd, message, files);
   task.commits = [...(task.commits ?? []), hash];
   task.status = "committed";
-  saveTask(cwd, task);
+  saveTask(root, task);
 
   return {
     task_id: taskId,

@@ -6,5 +6,6 @@ export const LOGS_DIR = ".agit/logs";
 export const MARKER_START = "<!-- agit:start -->";
 export const MARKER_END = "<!-- agit:end -->";
 export const MIRROR_DIR = ".agit/mirror.git";
-export const GITIGNORE_ENTRIES = [".agit/tasks/", ".agit/logs/", ".agit/mirror.git/"];
+export const WORKTREES_DIR = ".agit/worktrees";
+export const GITIGNORE_ENTRIES = [".agit/tasks/", ".agit/logs/", ".agit/mirror.git/", ".agit/worktrees/"];
 export const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;

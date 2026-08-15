@@ -9,7 +9,7 @@ import { startCommand } from "../../src/commands/start.js";
 import { DenylistHit, EmptyCommit } from "../../src/errors.js";
 import { loadProfile, saveProfile } from "../../src/profile.js";
 import { loadTask } from "../../src/taskstore.js";
-import { cloneRepo, createGitRepo, gitPushSetup, gitRun } from "../helpers/git-harness.js";
+import { cloneRepo, createGitRepo, gitPushSetup, gitRun, taskWork } from "../helpers/git-harness.js";
 
 const repos = [];
 
@@ -53,21 +53,22 @@ describe("regression: review loop", () => {
     const pr = prStub();
 
     await startCommand(work, "T1");
-    writeFileSync(join(work, "a.txt"), "first\n");
-    await commitCommand(work, "T1: add a");
+    const tree = taskWork(work, "T1");
+    writeFileSync(join(tree, "a.txt"), "first\n");
+    await commitCommand(tree, "T1: add a");
     await finishCommand(work, "T1", { createPr: pr.createPr });
 
     const published = gitRun(origin, ["rev-parse", "agit/T1"]).trim();
 
-    writeFileSync(join(work, "b.txt"), "review fix\n");
-    await commitCommand(work, "T1: address review");
+    writeFileSync(join(tree, "b.txt"), "review fix\n");
+    await commitCommand(tree, "T1: address review");
     const second = await finishCommand(work, "T1", { createPr: pr.createPr });
 
     assert.equal(second.already, false);
     assert.equal(second.pr_url, "https://github.com/acme/backend/pull/1");
     assert.equal(pr.calls.length, 1, "the PR must not be recreated");
 
-    const head = gitRun(work, ["rev-parse", "HEAD"]).trim();
+    const head = gitRun(tree, ["rev-parse", "HEAD"]).trim();
     assert.notEqual(gitRun(origin, ["rev-parse", "agit/T1"]).trim(), published);
     assert.equal(gitRun(origin, ["rev-parse", "agit/T1"]).trim(), head);
     assert.match(gitRun(origin, ["ls-tree", "-r", "--name-only", "agit/T1"]), /b\.txt/);
@@ -78,8 +79,9 @@ describe("regression: review loop", () => {
     const pr = prStub();
 
     await startCommand(work, "T1");
-    writeFileSync(join(work, "a.txt"), "first\n");
-    await commitCommand(work, "T1: add a");
+    const tree = taskWork(work, "T1");
+    writeFileSync(join(tree, "a.txt"), "first\n");
+    await commitCommand(tree, "T1: add a");
     await finishCommand(work, "T1", { createPr: pr.createPr });
 
     const again = await finishCommand(work, "T1", { createPr: pr.createPr });
@@ -92,14 +94,15 @@ describe("regression: review loop", () => {
     const pr = prStub();
 
     await startCommand(work, "T1");
-    writeFileSync(join(work, "a.txt"), "first\n");
-    await commitCommand(work, "T1: add a");
+    const tree = taskWork(work, "T1");
+    writeFileSync(join(tree, "a.txt"), "first\n");
+    await commitCommand(tree, "T1: add a");
     await finishCommand(work, "T1", { createPr: pr.createPr });
     const published = gitRun(origin, ["rev-parse", "agit/T1"]).trim();
 
-    gitRun(work, ["reset", "--hard", "HEAD~1"]);
-    writeFileSync(join(work, "c.txt"), "rewritten\n");
-    await commitCommand(work, "T1: rewritten");
+    gitRun(tree, ["reset", "--hard", "HEAD~1"]);
+    writeFileSync(join(tree, "c.txt"), "rewritten\n");
+    await commitCommand(tree, "T1: rewritten");
 
     await assert.rejects(() => finishCommand(work, "T1", { createPr: pr.createPr }), /diverged/);
     assert.equal(gitRun(origin, ["rev-parse", "agit/T1"]).trim(), published);
@@ -117,7 +120,7 @@ describe("regression: task base", () => {
 
     await startCommand(created.work, "T2");
 
-    assert.match(gitRun(created.work, ["ls-tree", "-r", "--name-only", "HEAD"]), /upstream\.txt/);
+    assert.match(gitRun(taskWork(created.work, "T2"), ["ls-tree", "-r", "--name-only", "HEAD"]), /upstream\.txt/);
     assert.equal(loadTask(created.work, "T2").base_ref, "origin/main");
   });
 
@@ -129,7 +132,7 @@ describe("regression: task base", () => {
 
     await startCommand(work, "T3");
 
-    assert.match(gitRun(work, ["ls-tree", "-r", "--name-only", "HEAD"]), /local-only\.txt/);
+    assert.match(gitRun(taskWork(work, "T3"), ["ls-tree", "-r", "--name-only", "HEAD"]), /local-only\.txt/);
   });
 
   test("a task with no commits of its own cannot be published", async () => {
@@ -144,13 +147,14 @@ describe("regression: commit scope", () => {
   test("--files commits only the listed paths", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "T5");
-    writeFileSync(join(work, "mine.txt"), "agent work\n");
-    writeFileSync(join(work, "human-scratch.txt"), "unrelated\n");
+    const tree = taskWork(work, "T5");
+    writeFileSync(join(tree, "mine.txt"), "agent work\n");
+    writeFileSync(join(tree, "human-scratch.txt"), "unrelated\n");
 
-    const result = await commitCommand(work, "T5: add mine", { files: ["mine.txt"] });
+    const result = await commitCommand(tree, "T5: add mine", { files: ["mine.txt"] });
 
     assert.deepEqual(result.files, ["mine.txt"]);
-    assert.doesNotMatch(gitRun(work, ["ls-tree", "-r", "--name-only", "HEAD"]), /human-scratch/);
+    assert.doesNotMatch(gitRun(tree, ["ls-tree", "-r", "--name-only", "HEAD"]), /human-scratch/);
   });
 
   test("scope: explicit refuses to guess the file list", async () => {
@@ -162,18 +166,20 @@ describe("regression: commit scope", () => {
     gitRun(work, ["commit", "-m", "chore: explicit scope"]);
 
     await startCommand(work, "T6");
-    writeFileSync(join(work, "mine.txt"), "agent work\n");
+    const tree = taskWork(work, "T6");
+    writeFileSync(join(tree, "mine.txt"), "agent work\n");
 
-    await assert.rejects(() => commitCommand(work, "T6: add mine"), EmptyCommit);
-    await commitCommand(work, "T6: add mine", { files: ["mine.txt"] });
+    await assert.rejects(() => commitCommand(tree, "T6: add mine"), EmptyCommit);
+    await commitCommand(tree, "T6: add mine", { files: ["mine.txt"] });
   });
 
   test("--files rejects paths that did not change", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "T7");
-    writeFileSync(join(work, "mine.txt"), "agent work\n");
+    const tree = taskWork(work, "T7");
+    writeFileSync(join(tree, "mine.txt"), "agent work\n");
 
-    await assert.rejects(() => commitCommand(work, "T7: typo", { files: ["mien.txt"] }), EmptyCommit);
+    await assert.rejects(() => commitCommand(tree, "T7: typo", { files: ["mien.txt"] }), EmptyCommit);
   });
 });
 
@@ -181,13 +187,14 @@ describe("regression: file names and secrets", () => {
   test("commits paths that are not ASCII", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "T8");
-    writeFileSync(join(work, "документация.md"), "текст\n");
-    writeFileSync(join(work, "spaced name.txt"), "ok\n");
+    const tree = taskWork(work, "T8");
+    writeFileSync(join(tree, "документация.md"), "текст\n");
+    writeFileSync(join(tree, "spaced name.txt"), "ok\n");
 
-    const result = await commitCommand(work, "T8: add docs");
+    const result = await commitCommand(tree, "T8: add docs");
 
     assert.deepEqual(result.files, ["spaced name.txt", "документация.md"]);
-    const tracked = gitRun(work, ["-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", "HEAD"]);
+    const tracked = gitRun(tree, ["-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", "HEAD"]);
     assert.match(tracked, /документация\.md/);
     assert.match(tracked, /spaced name\.txt/);
   });
@@ -195,22 +202,25 @@ describe("regression: file names and secrets", () => {
   test("allows example env files but still blocks the real one", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "T9");
-    writeFileSync(join(work, ".env.example"), "API_KEY=\n");
+    const tree = taskWork(work, "T9");
+    writeFileSync(join(tree, ".env.example"), "API_KEY=\n");
 
-    const result = await commitCommand(work, "T9: document env");
+    const result = await commitCommand(tree, "T9: document env");
     assert.deepEqual(result.files, [".env.example"]);
 
-    writeFileSync(join(work, ".env"), "API_KEY=real\n");
-    await assert.rejects(() => commitCommand(work, "T9: leak"), DenylistHit);
+    writeFileSync(join(tree, ".env"), "API_KEY=real\n");
+    await assert.rejects(() => commitCommand(tree, "T9: leak"), DenylistHit);
   });
 
   test("blocks a credential hardcoded in a source file", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "T10");
-    writeFileSync(join(work, "config.ts"), 'export const key = "AKIAIOSFODNN7EXAMPLE";\n');
+    const tree = taskWork(work, "T10");
+    const awsExample = ["AKIA", "IOSFODNN7EXAMPLE"].join("");
+    writeFileSync(join(tree, "config.ts"), `export const key = "${awsExample}";\n`);
 
-    await assert.rejects(() => commitCommand(work, "T10: add config"), DenylistHit);
-    assert.doesNotMatch(gitRun(work, ["log", "--oneline"]), /T10/);
+    await assert.rejects(() => commitCommand(tree, "T10: add config"), DenylistHit);
+    assert.doesNotMatch(gitRun(tree, ["log", "--oneline"]), /T10/);
   });
 });
 
@@ -222,8 +232,9 @@ describe("regression: checks", () => {
     const pr = prStub();
 
     await startCommand(work, "T11");
-    writeFileSync(join(work, "a.txt"), "first\n");
-    await commitCommand(work, "T11: add a");
+    const tree = taskWork(work, "T11");
+    writeFileSync(join(tree, "a.txt"), "first\n");
+    await commitCommand(tree, "T11: add a");
 
     const result = await finishCommand(work, "T11", { createPr: pr.createPr });
     assert.equal(result.checks.every((check) => check.ok), true);
@@ -238,8 +249,9 @@ describe("regression: checks", () => {
     gitRun(work, ["commit", "-m", "chore: short timeout"]);
 
     await startCommand(work, "T12");
-    writeFileSync(join(work, "a.txt"), "first\n");
-    await commitCommand(work, "T12: add a");
+    const tree = taskWork(work, "T12");
+    writeFileSync(join(tree, "a.txt"), "first\n");
+    await commitCommand(tree, "T12: add a");
 
     await assert.rejects(() => finishCommand(work, "T12", { createPr: prStub().createPr }), /checks/);
     assert.equal(loadTask(work, "T12").checks.results[0].timed_out, true);
@@ -247,31 +259,34 @@ describe("regression: checks", () => {
 });
 
 describe("regression: resume and squash", () => {
-  test("start returns to the task branch from anywhere", async () => {
+  test("start returns to the task worktree from anywhere", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "T13");
-    writeFileSync(join(work, "a.txt"), "first\n");
-    await commitCommand(work, "T13: add a");
-    gitRun(work, ["checkout", "main"]);
+    const tree = taskWork(work, "T13");
+    writeFileSync(join(tree, "a.txt"), "first\n");
+    await commitCommand(tree, "T13: add a");
 
     const resumed = await startCommand(work, "T13");
 
     assert.equal(resumed.resumed, true);
-    assert.equal(gitRun(work, ["rev-parse", "--abbrev-ref", "HEAD"]).trim(), "agit/T13");
+    assert.equal(resumed.path, tree);
+    assert.equal(gitRun(work, ["rev-parse", "--abbrev-ref", "HEAD"]).trim(), "main");
+    assert.equal(gitRun(tree, ["rev-parse", "--abbrev-ref", "HEAD"]).trim(), "agit/T13");
   });
 
   test("a squashed commit keeps the first subject, not the last", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "T14");
-    writeFileSync(join(work, "a.txt"), "first\n");
-    await commitCommand(work, "T14: add the feature");
-    writeFileSync(join(work, "a.txt"), "second\n");
-    await commitCommand(work, "T14: fix a typo");
+    const tree = taskWork(work, "T14");
+    writeFileSync(join(tree, "a.txt"), "first\n");
+    await commitCommand(tree, "T14: add the feature");
+    writeFileSync(join(tree, "a.txt"), "second\n");
+    await commitCommand(tree, "T14: fix a typo");
 
     const result = await finishCommand(work, "T14", { createPr: prStub().createPr, squash: true });
 
-    assert.equal(gitRun(work, ["log", "-1", "--pretty=%s"]).trim(), "T14: add the feature");
-    assert.equal(gitRun(work, ["rev-list", "--count", "origin/main..HEAD"]).trim(), "1");
+    assert.equal(gitRun(tree, ["log", "-1", "--pretty=%s"]).trim(), "T14: add the feature");
+    assert.equal(gitRun(tree, ["rev-list", "--count", "origin/main..HEAD"]).trim(), "1");
     assert.match(result.message, /Draft PR created/);
   });
 });

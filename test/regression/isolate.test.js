@@ -10,7 +10,7 @@ import { isolateCommand } from "../../src/commands/isolate.js";
 import { startCommand } from "../../src/commands/start.js";
 import { getConfig } from "../../src/git.js";
 import { isMirrorUrl, mirrorPath, normalizeGitUrl } from "../../src/mirror.js";
-import { cloneRepo, createGitRepo, gitPushSetup, gitRun } from "../helpers/git-harness.js";
+import { cloneRepo, createGitRepo, gitPushSetup, gitRun, taskWork } from "../helpers/git-harness.js";
 
 const repos = [];
 
@@ -61,11 +61,12 @@ describe("regression: local mirror", () => {
   test("git push --no-verify origin stays on the mirror", async () => {
     const { work, origin } = await isolatedRepo();
     await startCommand(work, "T1");
-    writeFileSync(join(work, "leak.txt"), "should not reach github\n");
-    await commitCommand(work, "T1: leak");
+    const tree = taskWork(work, "T1");
+    writeFileSync(join(tree, "leak.txt"), "should not reach github\n");
+    await commitCommand(tree, "T1: leak");
 
-    gitRun(work, ["push", "--no-verify", "-u", "origin", "agit/T1"]);
-    gitRun(work, ["push", "--no-verify", originUrl(work), "HEAD:refs/heads/via-url"]);
+    gitRun(tree, ["push", "--no-verify", "-u", "origin", "agit/T1"]);
+    gitRun(tree, ["push", "--no-verify", originUrl(work), "HEAD:refs/heads/via-url"]);
 
     assert.doesNotMatch(gitRun(origin, ["branch"]), /agit\/T1|via-url/);
     assert.match(gitRun(mirrorPath(work), ["branch"]), /agit\/T1/);
@@ -92,15 +93,16 @@ describe("regression: local mirror", () => {
 
     await startCommand(created.work, "T2");
 
-    assert.match(gitRun(created.work, ["ls-tree", "-r", "--name-only", "HEAD"]), /upstream\.txt/);
+    assert.match(gitRun(taskWork(created.work, "T2"), ["ls-tree", "-r", "--name-only", "HEAD"]), /upstream\.txt/);
   });
 
   test("sync does not clobber an unpublished task branch on the mirror", async () => {
     const { work, origin } = await isolatedRepo();
     await startCommand(work, "T3");
-    writeFileSync(join(work, "local-only.txt"), "only on the mirror\n");
-    await commitCommand(work, "T3: local only");
-    gitRun(work, ["push", "--no-verify", "-u", "origin", "agit/T3"]);
+    const tree = taskWork(work, "T3");
+    writeFileSync(join(tree, "local-only.txt"), "only on the mirror\n");
+    await commitCommand(tree, "T3: local only");
+    gitRun(tree, ["push", "--no-verify", "-u", "origin", "agit/T3"]);
     const mirrorSha = gitRun(mirrorPath(work), ["rev-parse", "agit/T3"]).trim();
 
     await startCommand(work, "T4");
@@ -112,15 +114,16 @@ describe("regression: local mirror", () => {
   test("finish still publishes to the real remote and updates the same PR", async () => {
     const { work, origin } = await isolatedRepo();
     await startCommand(work, "T5");
-    writeFileSync(join(work, "a.txt"), "first\n");
-    await commitCommand(work, "T5: add a");
+    const tree = taskWork(work, "T5");
+    writeFileSync(join(tree, "a.txt"), "first\n");
+    await commitCommand(tree, "T5: add a");
     await finishCommand(work, "T5", prStub());
 
     assert.match(gitRun(origin, ["branch"]), /agit\/T5/);
     assert.match(gitRun(origin, ["ls-tree", "-r", "--name-only", "agit/T5"]), /a\.txt/);
 
-    writeFileSync(join(work, "b.txt"), "review\n");
-    await commitCommand(work, "T5: address review");
+    writeFileSync(join(tree, "b.txt"), "review\n");
+    await commitCommand(tree, "T5: address review");
     const second = await finishCommand(work, "T5", prStub());
 
     assert.equal(second.already, false);

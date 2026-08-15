@@ -106,8 +106,11 @@ export function createProgram() {
       .command("status")
       .description("Show task status")
       .argument("[task-id]", "Task id, defaults to the current branch")
-      .action(async (taskId, _opts, command) => {
-        await runCommand("status", command, () => statusCommand(cwdFrom(command), taskId));
+      .option("--all", "List every task")
+      .action(async (taskId, opts, command) => {
+        await runCommand("status", command, () =>
+          statusCommand(cwdFrom(command), taskId, { all: Boolean(opts.all) }),
+        );
       }),
   );
 

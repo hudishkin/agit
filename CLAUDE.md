@@ -11,12 +11,13 @@ This file is a hint, not the enforcement. Tool-call guards block Git mutations b
 
 ```bash
 agit start <task-id>
-# make code changes
+# work only in the path start printed
 agit commit -m "<task-id>: <summary>"
 agit finish <task-id>
 ```
 
 Read-only Git is allowed: `git status`, `git diff`, `git log`, `git show`.
+Do not run `git worktree`. `agit start` already created the task directory.
 
 ## Instead of Git
 

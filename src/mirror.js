@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fetch, getConfig, remoteUrl, setConfig, setRemoteUrl, unsetConfig } from "./git.js";
 import { MIRROR_DIR } from "./paths.js";
+import { agitRoot } from "./root.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -19,8 +20,16 @@ async function gitAt(gitDir, args, { allowFail = false } = {}) {
   }
 }
 
-export function mirrorPath(cwd) {
-  return resolve(cwd, MIRROR_DIR);
+export function mirrorPath(root) {
+  return resolve(root, MIRROR_DIR);
+}
+
+export async function resolveMirrorDir(cwd) {
+  try {
+    return mirrorPath(await agitRoot(cwd));
+  } catch {
+    return mirrorPath(cwd);
+  }
 }
 
 export async function publishUrl(cwd, profile) {
@@ -48,7 +57,14 @@ export function normalizeGitUrl(url) {
 }
 
 export function isMirrorUrl(cwd, url) {
-  return Boolean(url) && normalizeGitUrl(url) === normalizeGitUrl(mirrorPath(cwd));
+  if (!url) {
+    return false;
+  }
+  const normalized = normalizeGitUrl(url);
+  if (normalized === normalizeGitUrl(mirrorPath(cwd))) {
+    return true;
+  }
+  return /(?:^|\/)\.agit\/mirror\.git$/.test(normalized);
 }
 
 export async function originPointsAtMirror(cwd) {
@@ -103,7 +119,7 @@ async function isAncestorAt(gitDir, ancestor, descendant) {
 // Pull GitHub (or the stored push URL) into the mirror. Team branches track the
 // remote. Unpublished agit/* branches on the mirror are left alone.
 export async function syncMirror(cwd, profile) {
-  const dir = mirrorPath(cwd);
+  const dir = await resolveMirrorDir(cwd);
   const url = await publishUrl(cwd, profile);
   if (!existsSync(dir) || !url) {
     return { synced: false };
@@ -134,7 +150,7 @@ export async function syncMirror(cwd, profile) {
 }
 
 export async function updateMirrorBranch(cwd, branch, sha) {
-  const dir = mirrorPath(cwd);
+  const dir = await resolveMirrorDir(cwd);
   if (!existsSync(dir)) {
     return;
   }
@@ -147,8 +163,9 @@ export async function inspectIsolation(cwd, profile) {
   const origin = await remoteUrl(cwd);
   const url = await publishUrl(cwd, profile);
   const flagged = await isolationEnabled(cwd);
-  const mirror = existsSync(mirrorPath(cwd));
-  const originIsMirror = isMirrorUrl(cwd, origin);
+  const dir = await resolveMirrorDir(cwd);
+  const mirror = existsSync(dir);
+  const originIsMirror = isMirrorUrl(cwd, origin) || isMirrorUrl(dir, origin);
   const isolated = Boolean(flagged && originIsMirror && url && !isMirrorUrl(cwd, url));
 
   return {
@@ -167,8 +184,8 @@ export async function enableIsolation(cwd, profile) {
     throw new Error("No origin remote to isolate.");
   }
 
-  const dir = mirrorPath(cwd);
-  const already = isMirrorUrl(cwd, origin);
+  const dir = await resolveMirrorDir(cwd);
+  const already = isMirrorUrl(cwd, origin) || isMirrorUrl(dir, origin);
   const url = already ? await publishUrl(cwd, profile) : origin;
   if (!url) {
     throw new Error("Cannot tell where the real remote is.");

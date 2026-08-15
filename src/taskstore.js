@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import yaml from "js-yaml";
 import { TaskStateError } from "./errors.js";
@@ -33,4 +33,15 @@ export function saveTask(cwd, task) {
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, yaml.dump(task, { lineWidth: 120, noRefs: true }));
   renameSync(tmp, path);
+}
+
+export function listTaskIds(root) {
+  const dir = join(root, TASKS_DIR);
+  if (!existsSync(dir)) {
+    return [];
+  }
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".yml"))
+    .map((name) => name.slice(0, -".yml".length))
+    .sort();
 }

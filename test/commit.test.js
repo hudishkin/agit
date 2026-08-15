@@ -9,7 +9,7 @@ import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { DenylistHit, EmptyCommit, WrongBranch } from "../src/errors.js";
 import { loadTask } from "../src/taskstore.js";
-import { createGitRepo, gitRun } from "./helpers/git-harness.js";
+import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
 const repos = [];
@@ -32,6 +32,7 @@ async function startedRepo() {
   gitRun(created.work, ["add", "-A"]);
   gitRun(created.work, ["commit", "-m", "chore: init agit"]);
   await startCommand(created.work, "AUTH-123");
+  created.tree = taskWork(created.work, "AUTH-123");
   return created;
 }
 
@@ -47,24 +48,24 @@ describe("commit", () => {
   });
 
   test("rejects an empty change set", async () => {
-    const { work } = await startedRepo();
-    await assert.rejects(() => commitCommand(work, "AUTH-123: empty"), EmptyCommit);
+    const { tree } = await startedRepo();
+    await assert.rejects(() => commitCommand(tree, "AUTH-123: empty"), EmptyCommit);
   });
 
   test("rejects .env and does not create a commit", async () => {
-    const { work } = await startedRepo();
-    const head = gitRun(work, ["rev-parse", "HEAD"]).trim();
-    writeFileSync(join(work, ".env"), "SECRET=1\n");
+    const { tree } = await startedRepo();
+    const head = gitRun(tree, ["rev-parse", "HEAD"]).trim();
+    writeFileSync(join(tree, ".env"), "SECRET=1\n");
 
-    await assert.rejects(() => commitCommand(work, "AUTH-123: leak"), DenylistHit);
-    assert.equal(gitRun(work, ["rev-parse", "HEAD"]).trim(), head);
+    await assert.rejects(() => commitCommand(tree, "AUTH-123: leak"), DenylistHit);
+    assert.equal(gitRun(tree, ["rev-parse", "HEAD"]).trim(), head);
   });
 
   test("commits locally and does not push", async () => {
-    const { work, origin } = await startedRepo();
-    writeFileSync(join(work, "note.txt"), "ok\n");
+    const { work, tree, origin } = await startedRepo();
+    writeFileSync(join(tree, "note.txt"), "ok\n");
 
-    const result = await commitCommand(work, "AUTH-123: add note");
+    const result = await commitCommand(tree, "AUTH-123: add note");
     const task = loadTask(work, "AUTH-123");
 
     assert.deepEqual(result.files, ["note.txt"]);
@@ -74,12 +75,12 @@ describe("commit", () => {
   });
 
   test("CLI commit --json lists files", async () => {
-    const { work } = await startedRepo();
-    writeFileSync(join(work, "note.txt"), "ok\n");
+    const { tree } = await startedRepo();
+    writeFileSync(join(tree, "note.txt"), "ok\n");
 
     const result = spawnSync(
       process.execPath,
-      [bin, "commit", "-m", "AUTH-123: add note", "--json", "-C", work],
+      [bin, "commit", "-m", "AUTH-123: add note", "--json", "-C", tree],
       { encoding: "utf8" },
     );
 
@@ -90,15 +91,15 @@ describe("commit", () => {
   });
 
   test("--files does not commit other staged paths", async () => {
-    const { work } = await startedRepo();
-    writeFileSync(join(work, "mine.txt"), "agent work\n");
-    writeFileSync(join(work, ".env"), "SECRET=1\n");
-    gitRun(work, ["add", ".env"]);
+    const { tree } = await startedRepo();
+    writeFileSync(join(tree, "mine.txt"), "agent work\n");
+    writeFileSync(join(tree, ".env"), "SECRET=1\n");
+    gitRun(tree, ["add", ".env"]);
 
-    const result = await commitCommand(work, "AUTH-123: add mine", { files: ["mine.txt"] });
+    const result = await commitCommand(tree, "AUTH-123: add mine", { files: ["mine.txt"] });
 
     assert.deepEqual(result.files, ["mine.txt"]);
-    const tracked = gitRun(work, ["ls-tree", "-r", "--name-only", "HEAD"]);
+    const tracked = gitRun(tree, ["ls-tree", "-r", "--name-only", "HEAD"]);
     assert.match(tracked, /mine\.txt/);
     assert.doesNotMatch(tracked, /\.env/);
   });

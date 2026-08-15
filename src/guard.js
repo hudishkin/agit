@@ -225,6 +225,10 @@ function classifyRemoteGit(name, args, tokens) {
     return denial("git push is blocked in this repository.", REMOTE_PUSH_HINT);
   }
 
+  if (name === "worktree") {
+    return denial("git worktree is managed by agit in this repository.", "Run: agit start <task-id>");
+  }
+
   if (name === "reset" && args.some((arg) => arg === "--hard" || arg.startsWith("--hard="))) {
     return denial("git reset --hard is not allowed.", "Do not destroy the working tree.");
   }

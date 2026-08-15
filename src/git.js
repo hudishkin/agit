@@ -129,6 +129,32 @@ export async function gitDir(cwd) {
   return runGit(cwd, ["rev-parse", "--git-dir"]);
 }
 
+export async function gitCommonDir(cwd) {
+  const raw = await runGit(cwd, ["rev-parse", "--git-common-dir"]);
+  return resolve(cwd, raw);
+}
+
+export async function addWorktree(cwd, path, { branch, startPoint } = {}) {
+  const args = ["worktree", "add"];
+  if (branch) {
+    args.push("-b", branch);
+  }
+  args.push(path);
+  if (startPoint) {
+    args.push(startPoint);
+  }
+  await runGit(cwd, args);
+}
+
+export async function removeWorktree(cwd, path, { force = false } = {}) {
+  const args = ["worktree", "remove"];
+  if (force) {
+    args.push("--force");
+  }
+  args.push(path);
+  await runGit(cwd, args);
+}
+
 export async function hooksPath(cwd) {
   const path = await runGit(cwd, ["rev-parse", "--git-path", "hooks"]);
   return resolve(cwd, path);
