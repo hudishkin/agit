@@ -68,6 +68,19 @@ describe("start", () => {
     assert.equal(await currentBranch(work), "agit/AUTH-123");
     assert.equal(loadTask(work, "AUTH-123").status, "started");
     assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
+    assert.match(result.message, /A human publishes/);
+    assert.doesNotMatch(result.message, /agit commit -m/);
+  });
+
+  test("protocol start tells the agent to commit and finish", async () => {
+    const created = repo();
+    await initCommand(created.work, { yes: true, install: false, mode: "protocol" });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+
+    const result = await startCommand(created.work, "AUTH-123");
+    assert.match(result.message, /agit commit -m/);
+    assert.match(result.message, /agit finish AUTH-123/);
   });
 
   test("resumes the same clean task", async () => {

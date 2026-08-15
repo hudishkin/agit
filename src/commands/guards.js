@@ -24,15 +24,14 @@ const CURSOR_RULE = ".cursor/rules/agit.mdc";
 const CLAUDE_FILE = "CLAUDE.md";
 const COPILOT_FILE = ".github/copilot-instructions.md";
 
-function writeCursorRule(cwd, section) {
+function writeCursorRule(cwd, section, enforcement) {
   const path = join(cwd, CURSOR_RULE);
   const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
   mkdirSync(dirname(path), { recursive: true });
   if (!existing.trim()) {
-    writeFileSync(
-      path,
-      `---\ndescription: Use agit for Git task workflow\nalwaysApply: true\n---\n\n${section}`,
-    );
+    const description =
+      enforcement === "remote" ? "Local git is allowed; do not publish" : "Use agit for Git task workflow";
+    writeFileSync(path, `---\ndescription: ${description}\nalwaysApply: true\n---\n\n${section}`);
     return path;
   }
   writeFileSync(path, mergeAgentsMd(existing, section));
@@ -58,7 +57,7 @@ export async function installAgentGuardsCommand(cwd, options = {}) {
     guards.push(writeClaudeSettings(cwd, { enforcement }));
   }
   if (want.cursor) {
-    files.push(writeCursorRule(cwd, section));
+    files.push(writeCursorRule(cwd, section, enforcement));
     guards.push(writeGuardScript(cwd, CURSOR_GUARD_SCRIPT, "cursor"));
     guards.push(writeCursorHooks(cwd));
   }

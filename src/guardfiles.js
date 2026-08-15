@@ -166,7 +166,7 @@ export function writeCursorHooks(cwd) {
   config.version = config.version ?? 1;
   config.hooks = config.hooks && typeof config.hooks === "object" ? config.hooks : {};
 
-  const entry = { command: CURSOR_HOOK_COMMAND, matcher: "git|gh", failClosed: true };
+  const entry = { command: CURSOR_HOOK_COMMAND, matcher: "git|gh|agit", failClosed: true };
   const list = asArray(config.hooks.beforeShellExecution);
   const index = list.findIndex((item) => item?.command === CURSOR_HOOK_COMMAND);
   if (index === -1) {

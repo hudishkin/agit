@@ -54,6 +54,7 @@ describe("agentsmd", () => {
     const text = readFileSync(join(dir, "AGENTS.md"), "utf8");
 
     assert.match(text, /Local Git is allowed/);
+    assert.match(text, /agit start <task-id>/);
     assert.doesNotMatch(text, /Do not use Git mutations for task workflow/);
   });
 });
