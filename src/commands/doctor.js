@@ -12,7 +12,9 @@ import {
 } from "../guardfiles.js";
 import { hookPath, hooksInstalled, installHooks } from "../hooks.js";
 import { inspectIsolation } from "../mirror.js";
+import { listPruneCandidates, staleHint } from "../prune.js";
 import { enforcementOf, loadProfile, profileExists } from "../profile.js";
+import { agitRoot } from "../root.js";
 import { installAgentGuardsCommand } from "./guards.js";
 
 const execFileAsync = promisify(execFile);
@@ -124,6 +126,23 @@ async function checkEnvironment(checks, cwd) {
     foreign ? "warn" : "ok",
     foreign ? "Found .agit.toml from another agit tool" : "No foreign agit metadata",
   );
+
+  if (repo && profile) {
+    try {
+      const root = await agitRoot(cwd);
+      const stale = await listPruneCandidates(root, profile);
+      const hint = staleHint(stale.length);
+      add(
+        checks,
+        "environment",
+        "stale_tasks",
+        stale.length ? "warn" : "ok",
+        hint ?? "No stale task worktrees",
+      );
+    } catch {
+      add(checks, "environment", "stale_tasks", "unknown", "Could not inspect stale tasks");
+    }
+  }
 
   return { repo, profile };
 }

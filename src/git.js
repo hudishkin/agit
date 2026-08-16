@@ -103,6 +103,14 @@ export async function branchExists(cwd, name) {
   return result !== null;
 }
 
+export async function deleteBranch(cwd, name) {
+  if (!(await branchExists(cwd, name))) {
+    return false;
+  }
+  await runGit(cwd, ["branch", "-D", name]);
+  return true;
+}
+
 export async function refExists(cwd, ref) {
   const result = await runGit(cwd, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
     allowFail: true,

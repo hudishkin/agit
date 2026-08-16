@@ -25,6 +25,7 @@ export const DEFAULT_PROFILE = {
     finish_mode: "draft_pr",
     squash_on_finish: false,
     one_push_policy: true,
+    prune_after_days: 14,
     // Missing key in an existing profile.yml also loads as protocol.
     enforcement: "protocol",
   },

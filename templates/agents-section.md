@@ -29,6 +29,7 @@ Do not run `git worktree`. `agit start` already created the task directory.
 | publish review fixes | `agit commit ...` then `agit finish <task-id>` again |
 | see where you are | `agit status` |
 | drop an unpublished task | `agit abort <task-id>` |
+| remove stale worktrees | `agit prune` then `agit prune --apply` |
 
 `agit finish` pushes and opens a draft PR. Running it again after review fixes updates the same PR. A human reviews and merges.
 

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { DirtyTree, NotInitialized, TaskStateError } from "../errors.js";
-import { isClean, isRepo, removeWorktree } from "../git.js";
+import { deleteBranch, isClean, isRepo, removeWorktree } from "../git.js";
 import { withTaskLock } from "../lock.js";
 import { profileExists } from "../profile.js";
 import { agitRoot, resolveTaskTree } from "../root.js";
@@ -43,6 +43,8 @@ export async function abortCommand(cwd, taskId) {
       }
     }
 
+    await deleteBranch(root, task.branch);
+
     task.status = "aborted";
     saveTask(root, task);
 
@@ -50,7 +52,7 @@ export async function abortCommand(cwd, taskId) {
       task_id: taskId,
       branch: task.branch,
       status: "aborted",
-      message: `Aborted ${taskId}. Remote was not changed.`,
+      message: `Aborted ${taskId}. Local branch removed. Remote was not changed.`,
     };
   });
 }

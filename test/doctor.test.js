@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { abortCommand } from "../src/commands/abort.js";
 import { doctorCommand } from "../src/commands/doctor.js";
 import { initCommand } from "../src/commands/init.js";
+import { startCommand } from "../src/commands/start.js";
 import { hookPath } from "../src/hooks.js";
 import { createGitRepo, gitRun } from "./helpers/git-harness.js";
 
@@ -48,6 +50,22 @@ describe("doctor", () => {
     assert.equal(result.checks.find((check) => check.id === "pre_push_hook").status, "ok");
     assert.equal(result.checks.find((check) => check.id === "cursor_guard").status, "ok");
     assert.equal(result.checks.find((check) => check.id === "claude_guard").status, "ok");
+    assert.equal(result.checks.find((check) => check.id === "stale_tasks").status, "ok");
+  });
+
+  test("warns about stale tasks", async () => {
+    const created = createGitRepo();
+    repos.push(created);
+    await initCommand(created.work, { yes: true, install: false });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+    await startCommand(created.work, "OLD");
+    await abortCommand(created.work, "OLD");
+
+    const result = await doctorCommand(created.work);
+    const stale = result.checks.find((check) => check.id === "stale_tasks");
+    assert.equal(stale.status, "warn");
+    assert.match(stale.message, /agit prune/);
   });
 
   test("warns about a foreign agit file", async () => {
