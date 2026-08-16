@@ -106,5 +106,22 @@ describe("status", () => {
     assert.equal(dirty.dirty, true);
     assert.ok(result.stale_count >= 1);
     assert.match(result.message, /agit prune/);
+
+    const aborted = result.tasks.find((task) => task.task_id === "OLD");
+    assert.equal(aborted.worktree_exists, false);
+    assert.match(result.message, /gone/);
+  });
+
+  test("status --all shows live commit count and last subject", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "A1");
+    const tree = taskWork(work, "A1");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "A1: add note");
+
+    const result = await statusCommand(work, undefined, { all: true });
+    assert.equal(result.tasks[0].commit_count, 1);
+    assert.equal(result.tasks[0].last_commit, "A1: add note");
+    assert.equal(result.tasks[0].dirty, false);
   });
 });
