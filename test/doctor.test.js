@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { doctorCommand } from "../src/commands/doctor.js";
 import { initCommand } from "../src/commands/init.js";
+import { hookPath } from "../src/hooks.js";
 import { createGitRepo, gitRun } from "./helpers/git-harness.js";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
@@ -57,6 +58,21 @@ describe("doctor", () => {
 
     const result = await doctorCommand(created.work);
     assert.equal(result.checks.find((check) => check.id === "foreign_agit").status, "warn");
+  });
+
+  test("doctor --fix reinstalls a missing pre-push hook", async () => {
+    const created = createGitRepo();
+    repos.push(created);
+    await initCommand(created.work, { yes: true, install: false });
+    const path = await hookPath(created.work);
+    rmSync(path, { force: true });
+    assert.equal(existsSync(path), false);
+
+    const result = await doctorCommand(created.work, { fix: true });
+    assert.equal(result.fixed.hooks, true);
+    assert.equal(existsSync(path), true);
+    assert.equal(result.checks.find((check) => check.id === "pre_push_hook").status, "ok");
+    assert.equal(result.checks.find((check) => check.id === "fix").status, "ok");
   });
 
   test("CLI doctor --json returns checks", async () => {

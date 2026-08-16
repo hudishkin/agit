@@ -6,8 +6,9 @@ import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { initCommand } from "../src/commands/init.js";
 import { promptCommand } from "../src/commands/prompt.js";
+import { startCommand } from "../src/commands/start.js";
 import { TaskStateError } from "../src/errors.js";
-import { createGitRepo } from "./helpers/git-harness.js";
+import { createGitRepo, gitRun } from "./helpers/git-harness.js";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
 const repos = [];
@@ -35,6 +36,19 @@ describe("prompt", () => {
     assert.match(result.prompt, /agit start AUTH-123/);
     assert.match(result.prompt, /Do not run agit finish/);
     assert.doesNotMatch(result.prompt, /When done, run:/);
+  });
+
+  test("includes stored title and body", async () => {
+    const created = createGitRepo();
+    repos.push(created);
+    await initCommand(created.work, { yes: true, install: false });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+    await startCommand(created.work, "AUTH-123", { title: "Fix login", body: "Cover the timeout." });
+
+    const result = await promptCommand(created.work, "AUTH-123");
+    assert.match(result.prompt, /Title: Fix login/);
+    assert.match(result.prompt, /Cover the timeout/);
   });
 
   test("rejects an invalid task id", async () => {

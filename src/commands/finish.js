@@ -224,9 +224,16 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
     }
 
     const subject = await commitSubject(tree);
-    const summary = summarizeCommit(taskId, subject);
+    const summary = task.title || summarizeCommit(taskId, subject);
     const title = formatTitle(profile.pr.title_template, taskId, summary);
-    const body = renderPrBody({ taskId, branch: task.branch, summary, checks, files });
+    const body = renderPrBody({
+      taskId,
+      branch: task.branch,
+      summary: task.body || summary,
+      checks,
+      files,
+      issue: task.issue ?? null,
+    });
 
     try {
       const repo =

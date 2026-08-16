@@ -106,6 +106,28 @@ describe("finish", () => {
     assert.match(gh.calls[0].body, /AUTH-123/);
     assert.match(gh.calls[0].body, /note\.txt/);
     assert.match(gh.calls[0].body, /`true`/);
+    assert.doesNotMatch(gh.calls[0].body, /Closes #123/);
+  });
+
+  test("uses start title, body, and issue in the draft PR", async () => {
+    const created = repo();
+    await initCommand(created.work, { yes: true, install: false, checks: ["true"] });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+    await startCommand(created.work, "AUTH-123", {
+      title: "Fix login",
+      body: "Cover the timeout path.",
+      issue: 12,
+    });
+    const tree = taskWork(created.work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+
+    const gh = fakePr();
+    await finishCommand(created.work, "AUTH-123", gh);
+    assert.equal(gh.calls[0].title, "AUTH-123: Fix login");
+    assert.match(gh.calls[0].body, /Cover the timeout path/);
+    assert.match(gh.calls[0].body, /Closes #12/);
   });
 
   test("second finish does not push again", async () => {

@@ -13,13 +13,14 @@ export function summarizeCommit(taskId, subject) {
   return subject.startsWith(prefix) ? subject.slice(prefix.length) : subject;
 }
 
-export function renderPrBody({ taskId, branch, summary, checks, files }) {
+export function renderPrBody({ taskId, branch, summary, checks, files, issue = null }) {
   const template = readFileSync(TEMPLATE_PATH, "utf8");
   const checkLines = checks.length
     ? checks.map((check) => `- [${check.ok ? "x" : " "}] \`${check.command}\``).join("\n")
     : "- —";
   const fileLines = files.length ? files.map((file) => `- ${file}`).join("\n") : "- —";
   const checksStatus = checks.length === 0 || checks.every((check) => check.ok) ? "passed" : "failed";
+  const closes = issue ? `Closes #${issue}\n` : "";
 
   return template
     .replaceAll("{summary}", summary || "—")
@@ -27,5 +28,6 @@ export function renderPrBody({ taskId, branch, summary, checks, files }) {
     .replaceAll("{branch}", branch)
     .replaceAll("{checks_status}", checksStatus)
     .replaceAll("{checks}", checkLines)
-    .replaceAll("{files}", fileLines);
+    .replaceAll("{files}", fileLines)
+    .replaceAll("{closes}", closes);
 }

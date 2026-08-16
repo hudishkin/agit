@@ -99,7 +99,34 @@ async function ensureTaskWorktree(root, task) {
   );
 }
 
-export async function startCommand(cwd, taskId) {
+function normalizeIssue(issue) {
+  if (issue == null || issue === "") {
+    return null;
+  }
+  const value = String(issue).replace(/^#/, "");
+  if (!/^\d+$/.test(value)) {
+    throw new TaskStateError(
+      `Invalid issue: ${issue}`,
+      "Pass a GitHub issue number, for example --issue 12.",
+    );
+  }
+  return value;
+}
+
+function applyMetadata(task, { title, body, issue } = {}) {
+  if (title != null) {
+    task.title = title;
+  }
+  if (body != null) {
+    task.body = body;
+  }
+  if (issue !== undefined) {
+    task.issue = normalizeIssue(issue);
+  }
+  return task;
+}
+
+export async function startCommand(cwd, taskId, metadata = {}) {
   assertTaskId(taskId);
 
   if (!(await isRepo(cwd))) {
@@ -135,6 +162,7 @@ export async function startCommand(cwd, taskId) {
       if (wasAborted) {
         task.status = "started";
       }
+      applyMetadata(task, metadata);
       saveTask(root, task);
 
       return {
@@ -156,18 +184,21 @@ export async function startCommand(cwd, taskId) {
     mkdirSync(dirname(path), { recursive: true });
     await addWorktree(root, path, { branch, startPoint });
 
-    const task = {
-      task_id: taskId,
-      branch,
-      worktree: worktreeRelPath(taskId),
-      base_ref: startPoint,
-      base_sha: await revParse(path, "HEAD"),
-      status: "started",
-      created_at: new Date().toISOString(),
-      commits: [],
-      checks: { last_status: null },
-      publish: { pushed: false, pushed_sha: null, pr_url: null },
-    };
+    const task = applyMetadata(
+      {
+        task_id: taskId,
+        branch,
+        worktree: worktreeRelPath(taskId),
+        base_ref: startPoint,
+        base_sha: await revParse(path, "HEAD"),
+        status: "started",
+        created_at: new Date().toISOString(),
+        commits: [],
+        checks: { last_status: null },
+        publish: { pushed: false, pushed_sha: null, pr_url: null },
+      },
+      metadata,
+    );
     saveTask(root, task);
 
     return {
