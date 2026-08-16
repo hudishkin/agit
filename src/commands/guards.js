@@ -8,16 +8,19 @@ import {
   writeCursorHooks,
   writeGuardScript,
 } from "../guardfiles.js";
-import { enforcementOf, loadProfile, profileExists } from "../profile.js";
+import { enforcementOf } from "../profile.js";
+import { loadWorkspace } from "../store.js";
 
-function enforcementFor(cwd, override) {
+async function enforcementFor(cwd, override) {
   if (override) {
     return override;
   }
-  if (!profileExists(cwd)) {
+  try {
+    const { profile } = await loadWorkspace(cwd, { required: false });
+    return profile ? enforcementOf(profile) : "protocol";
+  } catch {
     return "protocol";
   }
-  return enforcementOf(loadProfile(cwd));
 }
 
 const CURSOR_RULE = ".cursor/rules/agit.mdc";
@@ -45,7 +48,7 @@ export async function installAgentGuardsCommand(cwd, options = {}) {
     cursor: none || Boolean(options.cursor),
     copilot: none || Boolean(options.copilot),
   };
-  const enforcement = enforcementFor(cwd, options.enforcement);
+  const enforcement = await enforcementFor(cwd, options.enforcement);
   const section = loadAgentsSection(enforcement);
 
   const files = [];

@@ -2,8 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { inspectMergeRequest } from "./prhost.js";
 import { branchExists, currentBranch, deleteBranch, isClean, removeWorktree } from "./git.js";
-import { WORKTREES_DIR } from "./paths.js";
-import { worktreeAbsPath } from "./root.js";
+import { asStore, worktreeAbsPath } from "./root.js";
 import { liveCommitCount } from "./taskinfo.js";
 import { deleteTask, listTaskIds, loadTask, taskExists } from "./taskstore.js";
 
@@ -29,6 +28,14 @@ function ageDays(createdAt, now) {
   return ms / 86_400_000;
 }
 
+function stateDir(rootOrStore) {
+  const store = asStore(rootOrStore);
+  if (existsSync(join(store.dir, "profile.yml")) || existsSync(join(store.dir, "tasks"))) {
+    return store.dir;
+  }
+  return store.root;
+}
+
 async function taskCommitCount(root, task) {
   const tree = task.worktree ? worktreeAbsPath(root, task.task_id) : null;
   if (tree && existsSync(tree)) {
@@ -43,7 +50,7 @@ export async function classifyPruneReason(root, task, { maxAgeDays, now, inspect
   }
 
   if (isPublishedOpen(task) && task.publish?.pr_url) {
-    const pr = await inspect(root, task.publish.pr_url);
+    const pr = await inspect(asStore(root).root, task.publish.pr_url);
     if (pr?.merged) {
       return "merged";
     }
@@ -63,17 +70,19 @@ export async function classifyPruneReason(root, task, { maxAgeDays, now, inspect
 }
 
 export async function listOrphanWorktrees(root) {
-  const dir = join(root, WORKTREES_DIR);
+  const store = asStore(root);
+  const dir = join(store.dir, "worktrees");
   if (!existsSync(dir)) {
     return [];
   }
 
   const orphans = [];
+  const state = stateDir(store);
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || taskExists(root, entry.name)) {
+    if (!entry.isDirectory() || taskExists(state, entry.name)) {
       continue;
     }
-    const path = worktreeAbsPath(root, entry.name);
+    const path = worktreeAbsPath(store, entry.name);
     const branch = existsSync(path) ? await currentBranch(path).catch(() => null) : null;
     orphans.push({
       task_id: entry.name,
@@ -87,12 +96,14 @@ export async function listOrphanWorktrees(root) {
 }
 
 export async function listPruneCandidates(root, profile, { inspectPr: inspect = inspectMergeRequest, now = new Date() } = {}) {
+  const store = asStore(root);
+  const state = stateDir(store);
   const maxAgeDays = pruneAfterDays(profile);
   const candidates = [];
 
-  for (const id of listTaskIds(root)) {
-    const task = loadTask(root, id);
-    const reason = await classifyPruneReason(root, task, { maxAgeDays, now, inspectPr: inspect });
+  for (const id of listTaskIds(state)) {
+    const task = loadTask(state, id);
+    const reason = await classifyPruneReason(store, task, { maxAgeDays, now, inspectPr: inspect });
     if (!reason) {
       continue;
     }
@@ -100,12 +111,12 @@ export async function listPruneCandidates(root, profile, { inspectPr: inspect = 
       task_id: id,
       reason,
       branch: task.branch ?? null,
-      path: task.worktree ? worktreeAbsPath(root, id) : null,
+      path: task.worktree ? worktreeAbsPath(store, id) : null,
       status: task.status,
     });
   }
 
-  candidates.push(...(await listOrphanWorktrees(root)));
+  candidates.push(...(await listOrphanWorktrees(store)));
   return candidates;
 }
 
@@ -118,21 +129,23 @@ export function staleHint(count) {
 }
 
 async function removeCandidate(root, candidate) {
+  const store = asStore(root);
   const tree = candidate.path;
   if (tree && existsSync(tree)) {
     const dirty = !(await isClean(tree));
     if (dirty && candidate.reason === "empty_old") {
       return { ...candidate, skipped: "dirty" };
     }
-    await removeWorktree(root, tree, { force: candidate.reason !== "empty_old" || dirty });
+    await removeWorktree(store.root, tree, { force: candidate.reason !== "empty_old" || dirty });
   }
 
-  if (candidate.branch && (await branchExists(root, candidate.branch))) {
-    await deleteBranch(root, candidate.branch);
+  if (candidate.branch && (await branchExists(store.root, candidate.branch))) {
+    await deleteBranch(store.root, candidate.branch);
   }
 
-  if (taskExists(root, candidate.task_id)) {
-    deleteTask(root, candidate.task_id);
+  const state = stateDir(store);
+  if (taskExists(state, candidate.task_id)) {
+    deleteTask(state, candidate.task_id);
   }
 
   return { ...candidate, removed: true };

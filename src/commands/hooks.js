@@ -1,14 +1,19 @@
 import { NotInitialized } from "../errors.js";
 import { isRepo } from "../git.js";
 import { installHooks } from "../hooks.js";
-import { loadProfile, profileExists } from "../profile.js";
+import { loadWorkspace } from "../store.js";
 
 export async function installHooksCommand(cwd) {
   if (!(await isRepo(cwd))) {
     throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
   }
 
-  const profile = profileExists(cwd) ? loadProfile(cwd) : undefined;
+  let profile;
+  try {
+    profile = (await loadWorkspace(cwd, { required: false })).profile ?? undefined;
+  } catch {
+    profile = undefined;
+  }
   const { path, backup } = await installHooks(cwd, profile);
 
   return {

@@ -4,6 +4,14 @@ import yaml from "js-yaml";
 import { TaskStateError } from "./errors.js";
 import { TASKS_DIR, TASK_ID_PATTERN } from "./paths.js";
 
+export function resolveTasksDir(cwd) {
+  const storeMarker = existsSync(join(cwd, "profile.yml")) || existsSync(join(cwd, "source.yml"));
+  if (storeMarker && !existsSync(join(cwd, ".agit", "profile.yml"))) {
+    return join(cwd, "tasks");
+  }
+  return join(cwd, TASKS_DIR);
+}
+
 export function assertTaskId(taskId) {
   if (!TASK_ID_PATTERN.test(taskId)) {
     throw new TaskStateError(
@@ -15,7 +23,7 @@ export function assertTaskId(taskId) {
 
 export function taskPath(cwd, taskId) {
   assertTaskId(taskId);
-  return join(cwd, TASKS_DIR, `${taskId}.yml`);
+  return join(resolveTasksDir(cwd), `${taskId}.yml`);
 }
 
 export function taskExists(cwd, taskId) {
@@ -29,7 +37,7 @@ export function loadTask(cwd, taskId) {
 export function saveTask(cwd, task) {
   assertTaskId(task.task_id);
   const path = taskPath(cwd, task.task_id);
-  mkdirSync(join(cwd, TASKS_DIR), { recursive: true });
+  mkdirSync(resolveTasksDir(cwd), { recursive: true });
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, yaml.dump(task, { lineWidth: 120, noRefs: true }));
   renameSync(tmp, path);
@@ -40,7 +48,7 @@ export function deleteTask(cwd, taskId) {
 }
 
 export function listTaskIds(root) {
-  const dir = join(root, TASKS_DIR);
+  const dir = resolveTasksDir(root);
   if (!existsSync(dir)) {
     return [];
   }

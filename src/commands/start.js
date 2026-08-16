@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DirtyTree, NotInitialized, TaskStateError } from "../errors.js";
+import { DirtyTree, TaskStateError } from "../errors.js";
 import {
   addWorktree,
   branchExists,
@@ -8,15 +8,15 @@ import {
   fetch,
   isAncestor,
   isClean,
-  isRepo,
   refExists,
   remoteUrl,
   revParse,
 } from "../git.js";
 import { withTaskLock } from "../lock.js";
 import { isolationEnabled, syncMirror } from "../mirror.js";
-import { enforcementOf, loadProfile, profileExists } from "../profile.js";
-import { agitRoot, resolveTaskTree, worktreeAbsPath, worktreeRelPath } from "../root.js";
+import { enforcementOf } from "../profile.js";
+import { resolveTaskTree, worktreeAbsPath, worktreeRelPath } from "../root.js";
+import { loadWorkspace } from "../store.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
 
 function nextHint(taskId, enforcement, path) {
@@ -82,15 +82,15 @@ export async function resolveStartPoint(cwd, base, hasRemote, { preferOrigin = f
   return { ref: base, note: `Local ${base} and origin/${base} have diverged; branching from local ${base}.` };
 }
 
-async function ensureTaskWorktree(root, task) {
-  const tree = resolveTaskTree(root, task, worktreeAbsPath(root, task.task_id));
+async function ensureTaskWorktree(store, task) {
+  const tree = resolveTaskTree(store, task, worktreeAbsPath(store, task.task_id));
   if (existsSync(tree)) {
     return tree;
   }
 
   mkdirSync(dirname(tree), { recursive: true });
-  if (await branchExists(root, task.branch)) {
-    await addWorktree(root, tree, { startPoint: task.branch });
+  if (await branchExists(store.root, task.branch)) {
+    await addWorktree(store.root, tree, { startPoint: task.branch });
     return tree;
   }
 
@@ -130,16 +130,8 @@ function applyMetadata(task, { title, body, issue } = {}) {
 export async function startCommand(cwd, taskId, metadata = {}) {
   assertTaskId(taskId);
 
-  if (!(await isRepo(cwd))) {
-    throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
-  }
-
-  if (!profileExists(cwd)) {
-    throw new NotInitialized("agit is not initialized.");
-  }
-
-  const root = await agitRoot(cwd);
-  const profile = loadProfile(cwd);
+  const { store, profile, root } = await loadWorkspace(cwd);
+  const state = store.dir;
   const branch = `${profile.workflow.branch_prefix}${taskId}`;
   const base = profile.repo.default_branch ?? (await defaultBranch(cwd));
   const url = await remoteUrl(cwd);
@@ -151,22 +143,22 @@ export async function startCommand(cwd, taskId, metadata = {}) {
     await fetch(cwd);
   }
 
-  return withTaskLock(root, taskId, async () => {
-    if (taskExists(root, taskId)) {
-      const task = loadTask(root, taskId);
-      const intended = worktreeAbsPath(root, taskId);
+  return withTaskLock(state, taskId, async () => {
+    if (taskExists(state, taskId)) {
+      const task = loadTask(state, taskId);
+      const intended = worktreeAbsPath(store, taskId);
       if (!existsSync(intended) && !(await branchExists(root, task.branch))) {
         const { ref: startPoint, note } = await resolveStartPoint(root, base, Boolean(url), {
           preferOrigin: isolated,
         });
         mkdirSync(dirname(intended), { recursive: true });
         await addWorktree(root, intended, { branch: task.branch, startPoint });
-        task.worktree = worktreeRelPath(taskId);
+        task.worktree = worktreeRelPath(taskId, store);
         task.base_ref = startPoint;
         task.base_sha = await revParse(intended, "HEAD");
         task.commits = [];
         task.status = "started";
-        saveTask(root, task);
+        saveTask(state, task);
         return {
           task_id: taskId,
           branch: task.branch,
@@ -180,9 +172,9 @@ export async function startCommand(cwd, taskId, metadata = {}) {
         };
       }
 
-      const path = await ensureTaskWorktree(root, { ...task, worktree: task.worktree ?? worktreeRelPath(taskId) });
+      const path = await ensureTaskWorktree(store, { ...task, worktree: task.worktree ?? worktreeRelPath(taskId, store) });
       if (!task.worktree) {
-        task.worktree = worktreeRelPath(taskId);
+        task.worktree = worktreeRelPath(taskId, store);
       }
 
       const wasAborted = task.status === "aborted";
@@ -190,7 +182,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
         task.status = "started";
       }
       applyMetadata(task, metadata);
-      saveTask(root, task);
+      saveTask(state, task);
 
       return {
         task_id: taskId,
@@ -214,7 +206,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
       preferOrigin: isolated,
     });
 
-    const path = worktreeAbsPath(root, taskId);
+    const path = worktreeAbsPath(store, taskId);
     mkdirSync(dirname(path), { recursive: true });
     await addWorktree(root, path, { branch, startPoint });
 
@@ -222,7 +214,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
       {
         task_id: taskId,
         branch,
-        worktree: worktreeRelPath(taskId),
+        worktree: worktreeRelPath(taskId, store),
         base_ref: startPoint,
         base_sha: await revParse(path, "HEAD"),
         status: "started",
@@ -233,7 +225,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
       },
       metadata,
     );
-    saveTask(root, task);
+    saveTask(state, task);
 
     return {
       task_id: taskId,

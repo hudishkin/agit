@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readLogTail, runChecks } from "../checks.js";
-import { ChecksFailed, DirtyTree, NotInitialized, PublishFailed, TaskStateError, WrongBranch } from "../errors.js";
+import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError, WrongBranch } from "../errors.js";
 import { openerFor, providerOf } from "../prhost.js";
 import {
   commitSubject,
@@ -11,7 +11,6 @@ import {
   firstCommitSubject,
   isAncestor,
   isClean,
-  isRepo,
   logOneline,
   push,
   rebaseOnto,
@@ -22,10 +21,9 @@ import {
 } from "../git.js";
 import { withTaskLock } from "../lock.js";
 import { isolationEnabled, publishUrl, syncMirror, updateMirrorBranch } from "../mirror.js";
-import { LOGS_DIR } from "../paths.js";
 import { formatTitle, renderPrBody, summarizeCommit } from "../prbody.js";
-import { loadProfile, profileExists } from "../profile.js";
-import { agitRoot, resolveTaskTree } from "../root.js";
+import { resolveTaskTree } from "../root.js";
+import { loadWorkspace, storeLogsDir } from "../store.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
 
 function shouldSquash(profile, squash) {
@@ -87,20 +85,11 @@ async function rebaseOntoDefault(tree, profile, task) {
 export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = {}) {
   assertTaskId(taskId);
 
-  if (!(await isRepo(cwd))) {
-    throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
-  }
-
-  if (!profileExists(cwd)) {
-    throw new NotInitialized("agit is not initialized.");
-  }
-
-  const root = await agitRoot(cwd);
-  if (!taskExists(root, taskId)) {
+  const { store, profile, root } = await loadWorkspace(cwd);
+  const state = store.dir;
+  if (!taskExists(state, taskId)) {
     throw new TaskStateError(`Task ${taskId} was not found.`, "Run agit start <task-id> first.");
   }
-
-  const profile = loadProfile(cwd);
   const provider = providerOf(profile);
   const openPr = createPr ?? openerFor(provider);
   const isolated = await isolationEnabled(cwd);
@@ -108,9 +97,9 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = 
     await syncMirror(cwd, profile);
   }
 
-  return withTaskLock(root, taskId, async () => {
-    const task = loadTask(root, taskId);
-    const tree = resolveTaskTree(root, task, cwd);
+  return withTaskLock(state, taskId, async () => {
+    const task = loadTask(state, taskId);
+    const tree = resolveTaskTree(store, task, cwd);
     if (task.worktree && !existsSync(tree)) {
       throw new TaskStateError(
         `Task ${taskId} worktree is missing.`,
@@ -170,12 +159,12 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = 
           await fetch(tree);
         }
         if (await rebaseOntoDefault(tree, profile, task)) {
-          saveTask(root, task);
+          saveTask(state, task);
           base = await resolveBase(tree, task, profile);
         }
       }
 
-      const logPath = join(root, LOGS_DIR, `${taskId}-checks.log`);
+      const logPath = join(storeLogsDir(store), `${taskId}-checks.log`);
       const checkResults = await runChecks(tree, profile.checks ?? [], logPath, {
         timeoutSec: profile.checks_timeout_sec,
       });
@@ -184,7 +173,7 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = 
 
       if (failed.length > 0) {
         task.status = "checks_failed";
-        saveTask(root, task);
+        saveTask(state, task);
         throw new ChecksFailed(
           "Finish failed: checks did not pass.",
           `Fix the errors and run agit finish ${taskId} again.`,
@@ -197,7 +186,7 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = 
       }
 
       if (!(await isClean(tree))) {
-        saveTask(root, task);
+        saveTask(state, task);
         throw new DirtyTree(
           "Checks passed, but they left the working tree dirty.",
           "Commit the check output with agit commit, or restore the files, then run agit finish again.",
@@ -208,7 +197,7 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = 
         const subject = await firstCommitSubject(tree, base);
         const hash = await squashCommits(tree, base, subject);
         task.commits = [hash];
-        saveTask(root, task);
+        saveTask(state, task);
       }
 
       if (wasPushed) {
@@ -231,7 +220,7 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = 
           await updateMirrorBranch(root, task.branch, await revParse(tree, "HEAD"));
         }
       } catch (error) {
-        saveTask(root, task);
+        saveTask(state, task);
         if (error instanceof PublishFailed) {
           throw error;
         }
@@ -247,7 +236,7 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = 
         pr_url: existingPr,
       };
       task.status = existingPr ? "pr_created" : "pushed";
-      saveTask(root, task);
+      saveTask(state, task);
     }
 
     const files = await diffNames(tree, `${base}...HEAD`);
@@ -305,7 +294,7 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = 
       });
       task.publish = { ...(task.publish ?? {}), pushed: true, pr_url: prUrl };
       task.status = "pr_created";
-      saveTask(root, task);
+      saveTask(state, task);
 
       return {
         task_id: taskId,
@@ -320,7 +309,7 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = 
       };
     } catch (error) {
       task.status = "pushed";
-      saveTask(root, task);
+      saveTask(state, task);
       if (error instanceof PublishFailed) {
         throw error;
       }

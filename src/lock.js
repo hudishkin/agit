@@ -1,12 +1,13 @@
 import { mkdirSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 import { TaskStateError } from "./errors.js";
-import { TASKS_DIR } from "./paths.js";
+import { resolveTasksDir } from "./taskstore.js";
 
 export function acquireTaskLock(root, taskId) {
-  const dir = join(root, TASKS_DIR, `${taskId}.lock`);
+  const tasks = resolveTasksDir(root);
+  const dir = join(tasks, `${taskId}.lock`);
   try {
-    mkdirSync(join(root, TASKS_DIR), { recursive: true });
+    mkdirSync(tasks, { recursive: true });
     mkdirSync(dir);
   } catch (error) {
     if (error.code === "EEXIST") {

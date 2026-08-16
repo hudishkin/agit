@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
-import { AgitError, NotInitialized, PublishFailed } from "../errors.js";
-import { isRepo } from "../git.js";
+import { AgitError, PublishFailed } from "../errors.js";
 import { providerOf } from "../prhost.js";
-import { loadProfile, profileExists } from "../profile.js";
+import { loadWorkspace } from "../store.js";
 
 export function rulesetBody() {
   return {
@@ -56,15 +55,7 @@ function defaultApply(cwd, slug, body) {
 }
 
 export async function protectCommand(cwd, { apply = false } = {}, { applyRuleset = defaultApply } = {}) {
-  if (!(await isRepo(cwd))) {
-    throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
-  }
-
-  if (!profileExists(cwd)) {
-    throw new NotInitialized("agit is not initialized.");
-  }
-
-  const profile = loadProfile(cwd);
+  const { profile } = await loadWorkspace(cwd);
   if (providerOf(profile) !== "github") {
     return {
       applied: false,
