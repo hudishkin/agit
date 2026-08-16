@@ -145,6 +145,52 @@ describe("start", () => {
     await assert.rejects(() => startCommand(work, "AUTH-123", { issue: "AUTH-123" }), TaskStateError);
   });
 
+  test("strips a leading # from --issue", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123", { issue: "#12" });
+    assert.equal(loadTask(work, "AUTH-123").issue, "12");
+  });
+
+  test("treats an empty issue as unset", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123", { issue: "" });
+    assert.equal(loadTask(work, "AUTH-123").issue, null);
+  });
+
+  test("resume updates title and body", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123", { title: "First" });
+    await startCommand(work, "AUTH-123", { title: "Later", body: "Cover the timeout." });
+
+    const task = loadTask(work, "AUTH-123");
+    assert.equal(task.title, "Later");
+    assert.equal(task.body, "Cover the timeout.");
+  });
+
+  test("resume is allowed when the main checkout is dirty", async () => {
+    const { work } = await readyRepo();
+    const first = await startCommand(work, "AUTH-123");
+    writeFileSync(join(work, "dirty.txt"), "nope\n");
+
+    const again = await startCommand(work, "AUTH-123");
+    assert.equal(again.resumed, true);
+    assert.equal(again.path, first.path);
+  });
+
+  test("recreates a missing worktree from the existing branch", async () => {
+    const { work } = await readyRepo();
+    const first = await startCommand(work, "AUTH-123");
+    writeFileSync(join(first.path, "note.txt"), "keep\n");
+    gitRun(first.path, ["add", "-A"]);
+    gitRun(first.path, ["commit", "-m", "AUTH-123: keep"]);
+    gitRun(work, ["worktree", "remove", "--force", first.path]);
+
+    const again = await startCommand(work, "AUTH-123");
+    assert.equal(again.resumed, true);
+    assert.equal(again.path, first.path);
+    assert.match(gitRun(again.path, ["ls-tree", "-r", "--name-only", "HEAD"]), /note\.txt/);
+  });
+
   test("CLI start --json prints task state", async () => {
     const { work } = await readyRepo();
     const result = spawnSync(process.execPath, [bin, "start", "AUTH-123", "--json", "-C", work], {

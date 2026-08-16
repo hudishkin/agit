@@ -71,6 +71,17 @@ describe("abort", () => {
     await assert.rejects(() => abortCommand(work, "AUTH-123"), TaskStateError);
   });
 
+  test("aborts when the worktree directory is already gone", async () => {
+    const { work } = await readyRepo();
+    const started = await startCommand(work, "AUTH-123");
+    gitRun(work, ["worktree", "remove", "--force", started.path]);
+
+    const result = await abortCommand(work, "AUTH-123");
+    assert.equal(result.status, "aborted");
+    assert.equal(await branchExists(work, "agit/AUTH-123"), false);
+    assert.equal(loadTask(work, "AUTH-123").status, "aborted");
+  });
+
   test("start resumes an aborted task and a published one", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "AUTH-123");

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
@@ -247,6 +247,27 @@ describe("finish", () => {
     assert.equal(gh.calls[0].repo, "acme/backend");
   });
 
+  test("createDraftPr fails clearly when gh is missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agit-nogh-"));
+    dirs.push(dir);
+    const previous = process.env.PATH;
+    process.env.PATH = dir;
+    try {
+      await assert.rejects(
+        () =>
+          createDraftPr(dir, {
+            base: "main",
+            head: "agit/T1",
+            title: "t",
+            body: "b",
+          }),
+        PublishFailed,
+      );
+    } finally {
+      process.env.PATH = previous;
+    }
+  });
+
   test("createDraftPr forwards --repo to gh", async () => {
     const dir = mkdtempSync(join(tmpdir(), "agit-gh-"));
     dirs.push(dir);
@@ -325,5 +346,82 @@ describe("finish", () => {
       () => finishCommand(work, "AUTH-123", { ...fakePr(), squash: true }),
       TaskStateError,
     );
+  });
+
+  test("does not rebase after the first push even if origin/main moved", async () => {
+    const { work, tree, root, origin } = await readyTask();
+    await finishCommand(work, "AUTH-123", fakePr());
+
+    const other = cloneRepo({ root, origin });
+    writeFileSync(join(other, "upstream.txt"), "from a teammate\n");
+    gitRun(other, ["add", "-A"]);
+    gitRun(other, ["commit", "-m", "upstream change"]);
+    gitPushSetup(other, ["origin", "main"]);
+
+    writeFileSync(join(tree, "review.txt"), "review fix\n");
+    await commitCommand(tree, "AUTH-123: address review");
+    const gh = fakePr("https://github.com/acme/backend/pull/1");
+    const result = await finishCommand(work, "AUTH-123", gh);
+
+    assert.equal(result.already, false);
+    assert.equal(result.pr_url, "https://github.com/acme/backend/pull/1");
+    assert.equal(gh.calls.length, 0);
+    const files = gitRun(tree, ["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert.doesNotMatch(files, /upstream\.txt/);
+    assert.match(files, /review\.txt/);
+    assert.match(gitRun(origin, ["ls-tree", "-r", "--name-only", "agit/AUTH-123"]), /review\.txt/);
+  });
+
+  test("records the new base after a successful rebase", async () => {
+    const { work, origin, root } = await readyTask();
+    const other = cloneRepo({ root, origin });
+    writeFileSync(join(other, "upstream.txt"), "from a teammate\n");
+    gitRun(other, ["add", "-A"]);
+    gitRun(other, ["commit", "-m", "upstream change"]);
+    gitPushSetup(other, ["origin", "main"]);
+    const upstreamSha = gitRun(other, ["rev-parse", "HEAD"]).trim();
+
+    await finishCommand(work, "AUTH-123", fakePr());
+    const task = loadTask(work, "AUTH-123");
+    assert.equal(task.base_ref, "origin/main");
+    assert.equal(task.base_sha, upstreamSha);
+  });
+
+  test("keeps a successful rebase when later checks fail", async () => {
+    const { work, tree, root, origin } = await readyTask({ checks: ["false"] });
+    const other = cloneRepo({ root, origin });
+    writeFileSync(join(other, "upstream.txt"), "from a teammate\n");
+    gitRun(other, ["add", "-A"]);
+    gitRun(other, ["commit", "-m", "upstream change"]);
+    gitPushSetup(other, ["origin", "main"]);
+
+    await assert.rejects(() => finishCommand(work, "AUTH-123", fakePr()), ChecksFailed);
+    assert.match(gitRun(tree, ["ls-tree", "-r", "--name-only", "HEAD"]), /upstream\.txt/);
+    assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
+    assert.equal(await isClean(tree), true);
+  });
+
+  test("refuses to finish when the worktree directory is missing", async () => {
+    const { work, tree } = await readyTask();
+    rmSync(tree, { recursive: true, force: true });
+    assert.equal(existsSync(tree), false);
+
+    await assert.rejects(() => finishCommand(work, "AUTH-123", fakePr()), /worktree is missing/);
+  });
+
+  test("strips a leading # from --issue in the PR body", async () => {
+    const created = repo();
+    await initCommand(created.work, { yes: true, install: false, checks: ["true"] });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+    await startCommand(created.work, "AUTH-123", { issue: "#12" });
+    const tree = taskWork(created.work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+
+    const gh = fakePr();
+    await finishCommand(created.work, "AUTH-123", gh);
+    assert.match(gh.calls[0].body, /Closes #12/);
+    assert.doesNotMatch(gh.calls[0].body, /Closes ##12/);
   });
 });
