@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { inspectPr } from "./gh.js";
+import { inspectMergeRequest } from "./prhost.js";
 import { branchExists, currentBranch, deleteBranch, isClean, removeWorktree } from "./git.js";
 import { WORKTREES_DIR } from "./paths.js";
 import { worktreeAbsPath } from "./root.js";
@@ -37,7 +37,7 @@ async function taskCommitCount(root, task) {
   return task.commits?.length ?? 0;
 }
 
-export async function classifyPruneReason(root, task, { maxAgeDays, now, inspectPr: inspect = inspectPr }) {
+export async function classifyPruneReason(root, task, { maxAgeDays, now, inspectPr: inspect = inspectMergeRequest }) {
   if (task.status === "aborted") {
     return "aborted";
   }
@@ -86,7 +86,7 @@ export async function listOrphanWorktrees(root) {
   return orphans;
 }
 
-export async function listPruneCandidates(root, profile, { inspectPr: inspect = inspectPr, now = new Date() } = {}) {
+export async function listPruneCandidates(root, profile, { inspectPr: inspect = inspectMergeRequest, now = new Date() } = {}) {
   const maxAgeDays = pruneAfterDays(profile);
   const candidates = [];
 

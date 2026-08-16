@@ -11,6 +11,7 @@ import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError } from "../src/errors.js";
 import { createDraftPr } from "../src/gh.js";
+import { createDraftMr } from "../src/prhost.js";
 import { currentBranch, isClean, logOneline } from "../src/git.js";
 import { loadProfile, saveProfile } from "../src/profile.js";
 import { loadTask } from "../src/taskstore.js";
@@ -407,6 +408,93 @@ describe("finish", () => {
     assert.equal(existsSync(tree), false);
 
     await assert.rejects(() => finishCommand(work, "AUTH-123", fakePr()), /worktree is missing/);
+  });
+
+  test("skips PR creation when pr.provider is none", async () => {
+    const { work, origin } = await readyTask();
+    const profile = loadProfile(work);
+    profile.pr.provider = "none";
+    saveProfile(work, profile);
+    const gh = fakePr();
+
+    const result = await finishCommand(work, "AUTH-123", gh);
+    assert.equal(result.pr_url, null);
+    assert.equal(result.status, "pushed");
+    assert.equal(result.already, false);
+    assert.equal(loadTask(work, "AUTH-123").status, "pushed");
+    assert.match(gitRun(origin, ["branch"]), /AUTH-123/);
+    assert.equal(gh.calls.length, 0);
+
+    const again = await finishCommand(work, "AUTH-123", gh);
+    assert.equal(again.already, true);
+    assert.equal(again.status, "pushed");
+    assert.equal(gh.calls.length, 0);
+  });
+
+  test("opens a GitLab merge request when pr.provider is gitlab", async () => {
+    const { work } = await readyTask();
+    const profile = loadProfile(work);
+    profile.pr.provider = "gitlab";
+    profile.repo.owner = "acme";
+    profile.repo.name = "backend";
+    saveProfile(work, profile);
+    const gh = fakePr("https://gitlab.com/acme/backend/-/merge_requests/3");
+
+    const result = await finishCommand(work, "AUTH-123", gh);
+    assert.equal(result.pr_url, "https://gitlab.com/acme/backend/-/merge_requests/3");
+    assert.match(result.message, /merge request/);
+    assert.equal(gh.calls[0].repo, "acme/backend");
+  });
+
+  test("createDraftMr fails clearly when glab is missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agit-noglab-"));
+    dirs.push(dir);
+    const previous = process.env.PATH;
+    process.env.PATH = dir;
+    try {
+      await assert.rejects(
+        () =>
+          createDraftMr(dir, {
+            base: "main",
+            head: "agit/T1",
+            title: "t",
+            body: "b",
+          }),
+        PublishFailed,
+      );
+    } finally {
+      process.env.PATH = previous;
+    }
+  });
+
+  test("createDraftMr forwards flags to glab", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agit-glab-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "glab"),
+      `#!/bin/sh\nprintf '%s\\n' "$*" > "$(dirname "$0")/args"\necho https://gitlab.com/acme/backend/-/merge_requests/1\n`,
+    );
+    chmodSync(join(dir, "glab"), 0o755);
+
+    const previous = process.env.PATH;
+    process.env.PATH = `${dir}:${previous}`;
+    try {
+      const url = await createDraftMr(dir, {
+        base: "main",
+        head: "agit/T1",
+        title: "t",
+        body: "b",
+        repo: "acme/backend",
+      });
+      assert.equal(url, "https://gitlab.com/acme/backend/-/merge_requests/1");
+      const args = readFileSync(join(dir, "args"), "utf8");
+      assert.match(args, /--draft/);
+      assert.match(args, /--repo acme\/backend/);
+      assert.match(args, /--source-branch agit\/T1/);
+      assert.match(args, /--target-branch main/);
+    } finally {
+      process.env.PATH = previous;
+    }
   });
 
   test("strips a leading # from --issue in the PR body", async () => {

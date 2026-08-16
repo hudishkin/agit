@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readLogTail, runChecks } from "../checks.js";
 import { ChecksFailed, DirtyTree, NotInitialized, PublishFailed, TaskStateError, WrongBranch } from "../errors.js";
-import { createDraftPr } from "../gh.js";
+import { openerFor, providerOf } from "../prhost.js";
 import {
   commitSubject,
   currentBranch,
@@ -84,7 +84,7 @@ async function rebaseOntoDefault(tree, profile, task) {
   return true;
 }
 
-export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squash, rebase } = {}) {
+export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = {}) {
   assertTaskId(taskId);
 
   if (!(await isRepo(cwd))) {
@@ -101,6 +101,8 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
   }
 
   const profile = loadProfile(cwd);
+  const provider = providerOf(profile);
+  const openPr = createPr ?? openerFor(provider);
   const isolated = await isolationEnabled(cwd);
   if (isolated) {
     await syncMirror(cwd, profile);
@@ -265,6 +267,20 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
       };
     }
 
+    if (provider === "none") {
+      return {
+        task_id: taskId,
+        branch: task.branch,
+        pr_url: null,
+        pushed: true,
+        already: !needsPush,
+        status: "pushed",
+        files,
+        checks,
+        message: `Pushed ${task.branch}\nNo pull request opened (pr.provider is none).`,
+      };
+    }
+
     const subject = await commitSubject(tree);
     const summary = task.title || summarizeCommit(taskId, subject);
     const title = formatTitle(profile.pr.title_template, taskId, summary);
@@ -280,7 +296,7 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
     try {
       const repo =
         profile.repo.owner && profile.repo.name ? `${profile.repo.owner}/${profile.repo.name}` : undefined;
-      const prUrl = await createPr(tree, {
+      const prUrl = await openPr(tree, {
         base: profile.pr.base ?? profile.repo.default_branch,
         head: task.branch,
         title,
@@ -300,7 +316,7 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
         status: "pr_created",
         files,
         checks,
-        message: `Pushed ${task.branch}\nDraft PR created:\n${prUrl}`,
+        message: `Pushed ${task.branch}\nDraft ${provider === "gitlab" ? "merge request" : "PR"} created:\n${prUrl}`,
       };
     } catch (error) {
       task.status = "pushed";

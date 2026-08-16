@@ -92,6 +92,10 @@ describe("guard", () => {
     assert.equal(decide("gh release create v1"), "deny");
     assert.equal(decide("gh repo delete acme/x"), "deny");
     assert.equal(decide("gh repo view acme/x"), "allow");
+    assert.equal(decide("glab mr create --fill"), "deny");
+    assert.equal(decide("glab mr merge 4"), "deny");
+    assert.equal(decide("glab mr list"), "allow");
+    assert.equal(decide("glab mr view 4"), "allow");
   });
 
   test("denies fetch refspecs that can move local branches", () => {

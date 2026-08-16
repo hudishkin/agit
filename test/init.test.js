@@ -61,6 +61,7 @@ describe("init", () => {
     assert.equal(profile.repo.name, "backend");
     assert.equal(profile.repo.default_branch, "main");
     assert.equal(profile.workflow.enforcement, "remote");
+    assert.equal(profile.pr.provider, "github");
     assert.deepEqual(profile.checks, ["npm test"]);
     assert.match(readFileSync(join(work, "AGENTS.md"), "utf8"), /Local Git is allowed/);
     assert.match(readFileSync(join(work, ".gitignore"), "utf8"), /\.agit\/tasks\//);
@@ -198,9 +199,38 @@ describe("init", () => {
     assert.equal(readFileSync(join(work, ".github/pull_request_template.md"), "utf8"), "keep\n");
   });
 
+  test("detects GitLab remotes and writes pr.provider", async () => {
+    const { work } = repo();
+
+    await initCommand(work, {
+      yes: true,
+      install: false,
+      repo: "git@gitlab.com:acme/group/backend.git",
+    });
+
+    const profile = loadProfile(work);
+    assert.equal(profile.pr.provider, "gitlab");
+    assert.equal(profile.repo.owner, "acme/group");
+    assert.equal(profile.repo.name, "backend");
+  });
+
+  test("re-init keeps an existing pr.provider", async () => {
+    const { work } = repo();
+
+    await initCommand(work, { yes: true, install: false, repo: "git@gitlab.com:acme/backend.git" });
+    await initCommand(work, { yes: true, install: false, repo: "git@github.com:acme/backend.git" });
+
+    assert.equal(loadProfile(work).pr.provider, "gitlab");
+  });
+
   test("parseRepoUrl and packageHasAgit helpers", () => {
     assert.deepEqual(parseRepoUrl("git@github.com:acme/backend.git"), {
       url: "git@github.com:acme/backend.git",
+      owner: "acme",
+      name: "backend",
+    });
+    assert.deepEqual(parseRepoUrl("https://gitlab.com/acme/backend.git"), {
+      url: "https://gitlab.com/acme/backend.git",
       owner: "acme",
       name: "backend",
     });
