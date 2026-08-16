@@ -6,8 +6,10 @@ import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { NotInitialized, TaskStateError } from "../src/errors.js";
+import { DirtyTree, NotInitialized, TaskStateError } from "../src/errors.js";
 import { currentBranch } from "../src/git.js";
+import { acquireTaskLock } from "../src/lock.js";
+import { loadProfile, saveProfile } from "../src/profile.js";
 import { loadTask } from "../src/taskstore.js";
 import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
 
@@ -40,13 +42,34 @@ describe("start", () => {
     await assert.rejects(() => startCommand(work, "AUTH-123"), NotInitialized);
   });
 
-  test("starts even when the main checkout is dirty", async () => {
+  test("refuses to start when the main checkout is dirty", async () => {
     const { work } = await readyRepo();
+    writeFileSync(join(work, "dirty.txt"), "nope\n");
+
+    await assert.rejects(() => startCommand(work, "AUTH-123"), DirtyTree);
+    assert.equal(await currentBranch(work), "main");
+  });
+
+  test("starts when dirty if require_clean_tree_on_start is false", async () => {
+    const { work } = await readyRepo();
+    const profile = loadProfile(work);
+    profile.workflow.require_clean_tree_on_start = false;
+    saveProfile(work, profile);
     writeFileSync(join(work, "dirty.txt"), "nope\n");
 
     const result = await startCommand(work, "AUTH-123");
     assert.equal(await currentBranch(work), "main");
     assert.equal(await currentBranch(result.path), "agit/AUTH-123");
+  });
+
+  test("concurrent start of the same id fails the second lock", async () => {
+    const { work } = await readyRepo();
+    const release = acquireTaskLock(work, "AUTH-123");
+    try {
+      await assert.rejects(() => startCommand(work, "AUTH-123"), TaskStateError);
+    } finally {
+      release();
+    }
   });
 
   test("rejects an invalid task id", async () => {

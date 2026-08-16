@@ -4,6 +4,25 @@ import { PublishFailed } from "./errors.js";
 
 const execFileAsync = promisify(execFile);
 
+export async function inspectPr(cwd, url) {
+  if (!url) {
+    return null;
+  }
+
+  try {
+    const { stdout } = await execFileAsync("gh", ["pr", "view", url, "--json", "state,mergedAt"], {
+      encoding: "utf8",
+    });
+    const data = JSON.parse(stdout);
+    return {
+      state: data.state ?? null,
+      merged: Boolean(data.mergedAt) || data.state === "MERGED",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function createDraftPr(cwd, { base, head, title, body, repo }) {
   const args = ["pr", "create", "--draft", "--base", base, "--head", head, "--title", title, "--body", body];
   if (repo) {

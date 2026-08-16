@@ -4,6 +4,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { abortCommand } from "../src/commands/abort.js";
 import { commitCommand } from "../src/commands/commit.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
@@ -85,5 +86,25 @@ describe("status", () => {
     );
     assert.equal(result.tasks[0].path, taskWork(work, "A1"));
     assert.equal(result.tasks[1].worktree_exists, true);
+    assert.equal(result.tasks[0].dirty, false);
+    assert.equal(result.tasks[0].commit_count, 0);
+    assert.equal(typeof result.tasks[0].age, "string");
+    assert.equal(result.tasks[0].pr_url, null);
+    assert.match(result.message, /TASK/);
+    assert.match(result.message, /A1/);
+  });
+
+  test("status --all reports a dirty tree and a stale hint", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "A1");
+    writeFileSync(join(taskWork(work, "A1"), "note.txt"), "dirty\n");
+    await startCommand(work, "OLD");
+    await abortCommand(work, "OLD");
+
+    const result = await statusCommand(work, undefined, { all: true });
+    const dirty = result.tasks.find((task) => task.task_id === "A1");
+    assert.equal(dirty.dirty, true);
+    assert.ok(result.stale_count >= 1);
+    assert.match(result.message, /agit prune/);
   });
 });

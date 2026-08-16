@@ -7,8 +7,8 @@ import { commitCommand } from "../src/commands/commit.js";
 import { finishCommand } from "../src/commands/finish.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { TaskStateError } from "../src/errors.js";
-import { currentBranch } from "../src/git.js";
+import { DirtyTree, TaskStateError } from "../src/errors.js";
+import { branchExists, currentBranch } from "../src/git.js";
 import { loadTask } from "../src/taskstore.js";
 import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
 
@@ -45,7 +45,17 @@ describe("abort", () => {
     assert.equal(await currentBranch(work), "main");
     assert.equal(existsSync(started.path), false);
     assert.equal(loadTask(work, "AUTH-123").status, "aborted");
+    assert.equal(await branchExists(work, "agit/AUTH-123"), false);
     assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
+  });
+
+  test("refuses to abort a dirty worktree", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+    writeFileSync(join(taskWork(work, "AUTH-123"), "note.txt"), "dirty\n");
+
+    await assert.rejects(() => abortCommand(work, "AUTH-123"), DirtyTree);
+    assert.equal(await branchExists(work, "agit/AUTH-123"), true);
   });
 
   test("refuses to abort after publish", async () => {

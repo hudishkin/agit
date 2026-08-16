@@ -13,6 +13,7 @@ import { initCommand } from "./commands/init.js";
 import { isolateCommand } from "./commands/isolate.js";
 import { promptCommand } from "./commands/prompt.js";
 import { protectCommand } from "./commands/protect.js";
+import { pruneCommand } from "./commands/prune.js";
 import { startCommand } from "./commands/start.js";
 import { statusCommand } from "./commands/status.js";
 import { AgitError } from "./errors.js";
@@ -106,7 +107,7 @@ export function createProgram() {
       .command("status")
       .description("Show task status")
       .argument("[task-id]", "Task id, defaults to the current branch")
-      .option("--all", "List every task")
+      .option("--all", "List every task with age, dirty state, and PR")
       .action(async (taskId, opts, command) => {
         await runCommand("status", command, () =>
           statusCommand(cwdFrom(command), taskId, { all: Boolean(opts.all) }),
@@ -135,6 +136,16 @@ export function createProgram() {
       .argument("<task-id>", "Task id, for example AUTH-123")
       .action(async (taskId, _opts, command) => {
         await runCommand("abort", command, () => abortCommand(cwdFrom(command), taskId));
+      }),
+  );
+
+  applyOutputOptions(
+    program
+      .command("prune")
+      .description("List or remove stale local task worktrees and branches")
+      .option("--apply", "Delete candidates instead of listing them")
+      .action(async (opts, command) => {
+        await runCommand("prune", command, () => pruneCommand(cwdFrom(command), { apply: Boolean(opts.apply) }));
       }),
   );
 

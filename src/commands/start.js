@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { NotInitialized, TaskStateError } from "../errors.js";
+import { DirtyTree, NotInitialized, TaskStateError } from "../errors.js";
 import {
   addWorktree,
   branchExists,
   defaultBranch,
   fetch,
   isAncestor,
+  isClean,
   isRepo,
   refExists,
   remoteUrl,
@@ -126,6 +127,32 @@ export async function startCommand(cwd, taskId) {
   return withTaskLock(root, taskId, async () => {
     if (taskExists(root, taskId)) {
       const task = loadTask(root, taskId);
+      const intended = worktreeAbsPath(root, taskId);
+      if (!existsSync(intended) && !(await branchExists(root, task.branch))) {
+        const { ref: startPoint, note } = await resolveStartPoint(root, base, Boolean(url), {
+          preferOrigin: isolated,
+        });
+        mkdirSync(dirname(intended), { recursive: true });
+        await addWorktree(root, intended, { branch: task.branch, startPoint });
+        task.worktree = worktreeRelPath(taskId);
+        task.base_ref = startPoint;
+        task.base_sha = await revParse(intended, "HEAD");
+        task.commits = [];
+        task.status = "started";
+        saveTask(root, task);
+        return {
+          task_id: taskId,
+          branch: task.branch,
+          base: startPoint,
+          path: intended,
+          resumed: true,
+          status: task.status,
+          message: [`Restarted aborted task ${taskId} on ${task.branch}.`, note, nextHint(taskId, enforcementOf(profile), intended)]
+            .filter(Boolean)
+            .join("\n"),
+        };
+      }
+
       const path = await ensureTaskWorktree(root, { ...task, worktree: task.worktree ?? worktreeRelPath(taskId) });
       if (!task.worktree) {
         task.worktree = worktreeRelPath(taskId);
@@ -146,6 +173,13 @@ export async function startCommand(cwd, taskId) {
         status: task.status,
         message: `${wasAborted ? "Restarted aborted" : "Resumed"} task ${taskId} on ${task.branch}.\n${nextHint(taskId, enforcementOf(profile), path)}`,
       };
+    }
+
+    if (profile.workflow.require_clean_tree_on_start && !(await isClean(root))) {
+      throw new DirtyTree(
+        "The main checkout is not clean.",
+        "Commit or stash those changes, or set workflow.require_clean_tree_on_start: false.",
+      );
     }
 
     const { ref: startPoint, note } = await resolveStartPoint(root, base, Boolean(url), {

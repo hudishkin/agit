@@ -115,8 +115,10 @@ agit commit --files a b     Commit only these paths
 agit finish <task-id>       Checks → push → draft PR
 agit finish --squash        Squash commits before the first push
 agit status [task-id]       Task state
-agit status --all           Every task and its worktree path
-agit abort <task-id>        Drop a local task (not after publish)
+agit status --all           Every task: path, age, dirty, PR
+agit abort <task-id>        Drop a local task and its branch
+agit prune                  List stale worktrees (dry-run)
+agit prune --apply          Delete stale worktrees and local branches
 agit doctor                 Report which protection layers are active
 agit protect [--apply]      Show or create the GitHub ruleset
 agit isolate [--undo]       Point this clone's origin at a local mirror
