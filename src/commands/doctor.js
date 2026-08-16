@@ -13,6 +13,7 @@ import {
 import { hookPath, hooksInstalled, installHooks } from "../hooks.js";
 import { inspectIsolation } from "../mirror.js";
 import { listPruneCandidates, staleHint } from "../prune.js";
+import { providerOf } from "../prhost.js";
 import { enforcementOf, loadProfile, profileExists } from "../profile.js";
 import { agitRoot } from "../root.js";
 import { installAgentGuardsCommand } from "./guards.js";
@@ -21,7 +22,7 @@ const execFileAsync = promisify(execFile);
 
 export const LAYERS = {
   environment: "Environment",
-  server: "Layer 1: GitHub server-side rules (cannot be bypassed locally)",
+  server: "Layer 1: server-side rules (cannot be bypassed locally)",
   agent: "Layer 2: agent tool-call guards (block the command before the shell)",
   git: "Layer 3: git pre-push hook (guardrail, bypassable with --no-verify)",
   credential: "Layer 4: push credential boundary",
@@ -36,13 +37,17 @@ async function hasCommand(name) {
   }
 }
 
-async function gh(args) {
+async function runCli(name, args) {
   try {
-    const { stdout } = await execFileAsync("gh", args, { encoding: "utf8" });
+    const { stdout } = await execFileAsync(name, args, { encoding: "utf8" });
     return stdout;
   } catch {
     return null;
   }
+}
+
+async function gh(args) {
+  return runCli("gh", args);
 }
 
 function add(checks, layer, id, status, message) {
@@ -148,6 +153,31 @@ async function checkEnvironment(checks, cwd) {
 }
 
 async function checkServerLayer(checks, profile) {
+  const provider = providerOf(profile);
+  add(checks, "server", "pr_provider", "ok", `pr.provider is ${provider}`);
+
+  if (provider === "none") {
+    add(checks, "server", "gh", "ok", "Host CLI is not required (pr.provider is none)");
+    add(checks, "server", "server_rules", "unknown", "Server-side rules are not checked when pr.provider is none");
+    return;
+  }
+
+  if (provider === "gitlab") {
+    if (!(await hasCommand("glab"))) {
+      add(checks, "server", "glab", "warn", "glab is not on PATH; cannot open a draft merge request");
+      add(checks, "server", "server_rules", "unknown", "agit protect is GitHub-only; configure protected branches on GitLab");
+      return;
+    }
+    if ((await runCli("glab", ["auth", "status"])) === null) {
+      add(checks, "server", "glab", "warn", "glab is installed but not authenticated. Run glab auth login");
+      add(checks, "server", "server_rules", "unknown", "agit protect is GitHub-only; configure protected branches on GitLab");
+      return;
+    }
+    add(checks, "server", "glab", "ok", "glab is installed and authenticated");
+    add(checks, "server", "server_rules", "unknown", "agit protect is GitHub-only; configure protected branches on GitLab");
+    return;
+  }
+
   if (!(await hasCommand("gh"))) {
     add(checks, "server", "gh", "warn", "gh is not on PATH; cannot read GitHub rules or open a draft PR");
     add(checks, "server", "server_rules", "unknown", "Cannot verify server-side rules without gh");

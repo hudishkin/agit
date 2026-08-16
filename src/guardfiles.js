@@ -41,6 +41,13 @@ export const CLAUDE_DENY_RULES_REMOTE = [
   "Bash(gh pr edit:*)",
   "Bash(gh release create:*)",
   "Bash(gh repo delete:*)",
+  "Bash(glab mr create:*)",
+  "Bash(glab mr merge:*)",
+  "Bash(glab mr close:*)",
+  "Bash(glab mr reopen:*)",
+  "Bash(glab mr update:*)",
+  "Bash(glab release create:*)",
+  "Bash(glab repo delete:*)",
 ];
 
 export const CLAUDE_DENY_RULES = CLAUDE_DENY_RULES_PROTOCOL;

@@ -11,6 +11,7 @@ import { ensureGitignore } from "../gitignore.js";
 import { installHooks } from "../hooks.js";
 import { writePrTemplate, writeSetupAgent } from "../onboard.js";
 import { PACKAGE_NAME } from "../paths.js";
+import { detectProvider } from "../prhost.js";
 import {
   DEFAULT_PROFILE,
   ENFORCEMENT_MODES,
@@ -27,12 +28,20 @@ export function parseRepoUrl(url) {
     return {};
   }
 
-  const match = String(url).match(/github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/i);
-  if (!match) {
-    return { url };
+  const github = String(url).match(/github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/i);
+  if (github) {
+    return { url, owner: github[1], name: github[2] };
   }
 
-  return { url, owner: match[1], name: match[2] };
+  const gitlab = String(url).match(/(?:^|@|\/\/)([^/:]*gitlab[^/:]*)[:/](.+?)(?:\.git)?$/i);
+  if (gitlab) {
+    const parts = gitlab[2].replace(/\/+$/, "").split("/").filter(Boolean);
+    if (parts.length >= 2) {
+      return { url, owner: parts.slice(0, -1).join("/"), name: parts.at(-1) };
+    }
+  }
+
+  return { url };
 }
 
 export function packageHasAgit(pkg) {
@@ -97,6 +106,7 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     pr: {
       ...current.pr,
       base: branch,
+      provider: existed ? current.pr.provider : detectProvider(detectedUrl),
     },
   };
 

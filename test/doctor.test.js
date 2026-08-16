@@ -10,6 +10,7 @@ import { doctorCommand } from "../src/commands/doctor.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { hookPath } from "../src/hooks.js";
+import { loadProfile, saveProfile } from "../src/profile.js";
 import { createGitRepo, gitRun } from "./helpers/git-harness.js";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
@@ -51,6 +52,21 @@ describe("doctor", () => {
     assert.equal(result.checks.find((check) => check.id === "cursor_guard").status, "ok");
     assert.equal(result.checks.find((check) => check.id === "claude_guard").status, "ok");
     assert.equal(result.checks.find((check) => check.id === "stale_tasks").status, "ok");
+    assert.equal(result.checks.find((check) => check.id === "pr_provider").status, "ok");
+    assert.match(result.checks.find((check) => check.id === "pr_provider").message, /github/);
+  });
+
+  test("does not require gh when pr.provider is none", async () => {
+    const created = createGitRepo();
+    repos.push(created);
+    await initCommand(created.work, { yes: true, install: false });
+    const profile = loadProfile(created.work);
+    profile.pr.provider = "none";
+    saveProfile(created.work, profile);
+
+    const result = await doctorCommand(created.work);
+    assert.match(result.checks.find((check) => check.id === "pr_provider").message, /none/);
+    assert.match(result.checks.find((check) => check.id === "gh").message, /not required/);
   });
 
   test("warns about stale tasks", async () => {

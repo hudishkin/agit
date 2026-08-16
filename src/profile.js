@@ -38,6 +38,7 @@ export const DEFAULT_PROFILE = {
     scan_contents: true,
   },
   pr: {
+    provider: "github",
     draft: true,
     title_template: "{task_id}: {summary}",
     base: "main",

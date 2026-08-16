@@ -30,7 +30,7 @@ Each `start` creates `.agit/worktrees/<task-id>` on `agit/<task-id>`. The main c
 
 ## Install
 
-Needs Node 20+, `git`, and [GitHub CLI](https://cli.github.com/) (`gh`) for `finish`.
+Needs Node 20+ and `git`. `finish` also needs the host CLI for the configured `pr.provider`: [GitHub CLI](https://cli.github.com/) (`gh`) or [GitLab CLI](https://gitlab.com/gitlab-org/cli) (`glab`). Set `pr.provider: none` to only push the branch.
 
 ```bash
 npm i -g @hudishkin/agit
@@ -141,6 +141,12 @@ Every command accepts `--json`.
 workflow:
   enforcement: remote     # new init default. protocol = agit CLI workflow
 
+pr:
+  provider: github        # github | gitlab | none
+                          # github → gh pr create
+                          # gitlab → glab mr create
+                          # none → push the branch only
+
 checks:
   - npm test
 checks_timeout_sec: 900
@@ -154,7 +160,7 @@ commit:
 
 `init --yes` without `--checks` looks at the repo (`package.json` scripts.test, pytest, cargo, go) and writes what it finds. Existing non-empty `checks` are left alone.
 
-Existing profiles without `enforcement` stay on `protocol`. Isolation lives in this clone's git config, not in the profile.
+Existing profiles without `enforcement` stay on `protocol`. Existing profiles without `pr.provider` stay on `github`. `init` writes `gitlab` when the remote URL looks like GitLab. Isolation lives in this clone's git config, not in the profile.
 
 These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `allow_direct_push`, `allow_force_push`. Review-loop pushes after the first `finish` are allowed.
 
@@ -170,7 +176,7 @@ These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `a
 
 - **Checks failed.** Read `.agit/logs/<task-id>-checks.log`, fix, run `agit finish` again.
 - **Branch diverged after publish.** agit never force-pushes. Reconcile locally or start a new task id.
-- **`gh` missing or not logged in.** Push may have succeeded. Install and authenticate GitHub CLI, then `agit finish` again to open the PR.
+- **`gh` or `glab` missing or not logged in.** Push may have succeeded. Install and authenticate the CLI for `pr.provider`, then `agit finish` again to open the request. Or set `pr.provider: none` to skip that step.
 - **`abort` refuses.** The worktree is dirty, or the task was already published. Commit/restore, or close the PR yourself.
 - **Stale worktrees.** `agit abort` drops one unpublished task. `agit status --all` lists the rest.
 

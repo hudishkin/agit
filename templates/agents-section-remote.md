@@ -26,6 +26,6 @@ This file is a hint. Tool-call guards block publish commands before the shell ru
 
 ## If something fails
 
-- A push or `gh pr` command was blocked → stop. A human runs `agit finish <task-id>`.
+- A push, `gh pr`, or `glab mr` command was blocked → stop. A human runs `agit finish <task-id>`.
 - Do not `git push` manually.
 <!-- agit:end -->

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { AgitError, NotInitialized, PublishFailed } from "../errors.js";
 import { isRepo } from "../git.js";
+import { providerOf } from "../prhost.js";
 import { loadProfile, profileExists } from "../profile.js";
 
 export function rulesetBody() {
@@ -64,6 +65,19 @@ export async function protectCommand(cwd, { apply = false } = {}, { applyRuleset
   }
 
   const profile = loadProfile(cwd);
+  if (providerOf(profile) !== "github") {
+    return {
+      applied: false,
+      repo: null,
+      ruleset: null,
+      message: [
+        "agit protect only creates a GitHub ruleset.",
+        `This repository has pr.provider: ${providerOf(profile)}.`,
+        "Configure protected branches on the host, or set pr.provider to github.",
+      ].join("\n"),
+    };
+  }
+
   const { owner, name } = profile.repo;
   if (!owner || !name) {
     throw new AgitError({

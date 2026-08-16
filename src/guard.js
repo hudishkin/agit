@@ -52,6 +52,12 @@ const GH_MUTATING = new Map([
   ["repo", new Set(["delete", "archive", "edit", "rename"])],
 ]);
 
+const GLAB_MUTATING = new Map([
+  ["mr", new Set(["create", "merge", "close", "reopen", "update", "approve"])],
+  ["release", new Set(["create", "delete"])],
+  ["repo", new Set(["delete", "archive"])],
+]);
+
 const HTTP_MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const CURL_BODY_FLAGS = new Set([
   "-d",
@@ -163,6 +169,14 @@ export function classifyCommand(command, options = {}) {
     const ghIndex = findProgram(tokens, "gh");
     if (ghIndex !== -1) {
       const verdict = classifyGh(tokens, ghIndex, enforcement);
+      if (verdict.decision === "deny") {
+        return verdict;
+      }
+    }
+
+    const glabIndex = findProgram(tokens, "glab");
+    if (glabIndex !== -1) {
+      const verdict = classifyGlab(tokens, glabIndex, enforcement);
       if (verdict.decision === "deny") {
         return verdict;
       }
@@ -334,21 +348,29 @@ function classifyGhApi(args, hint) {
   return denial("gh api mutations are managed by agit in this repository.", hint);
 }
 
-function classifyGh(tokens, ghIndex, enforcement) {
+function classifyHostCli(tokens, index, enforcement, program, mutatingMap) {
   const hint = publishHint(enforcement);
-  const { name, args } = subcommandOf(tokens, ghIndex);
+  const { name, args } = subcommandOf(tokens, index);
   if (name === "api") {
     return classifyGhApi(args, hint);
   }
-  const mutating = GH_MUTATING.get(name);
+  const mutating = mutatingMap.get(name);
   if (!mutating) {
     return ALLOW;
   }
   const action = args.find((arg) => !arg.startsWith("-"));
   if (action && mutating.has(action)) {
-    return denial(`gh ${name} ${action} is managed by agit in this repository.`, hint);
+    return denial(`${program} ${name} ${action} is managed by agit in this repository.`, hint);
   }
   return ALLOW;
+}
+
+function classifyGh(tokens, ghIndex, enforcement) {
+  return classifyHostCli(tokens, ghIndex, enforcement, "gh", GH_MUTATING);
+}
+
+function classifyGlab(tokens, glabIndex, enforcement) {
+  return classifyHostCli(tokens, glabIndex, enforcement, "glab", GLAB_MUTATING);
 }
 
 function looksLikeGithubApi(token) {

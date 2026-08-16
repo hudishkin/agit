@@ -127,7 +127,7 @@ export function createProgram() {
   applyOutputOptions(
     program
       .command("finish")
-      .description("Run checks, push, and open or update the draft PR")
+      .description("Run checks, push, and open or update the draft PR or MR")
       .argument("<task-id>", "Task id, for example AUTH-123")
       .option("--squash", "Squash commits before the first push")
       .option("--no-squash", "Do not squash")
