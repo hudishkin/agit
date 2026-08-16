@@ -37,4 +37,10 @@ export function renderError(command, error, { json = false, stdout = process.std
   if (error.hint) {
     stderr.write(`${error.hint}\n`);
   }
+  if (error.details?.log_tail) {
+    stderr.write(`${error.details.log_tail}\n`);
+  }
+  if (error.details?.log_path) {
+    stderr.write(`Full log: ${error.details.log_path}\n`);
+  }
 }

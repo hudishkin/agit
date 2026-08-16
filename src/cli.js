@@ -130,9 +130,10 @@ export function createProgram() {
       .argument("<task-id>", "Task id, for example AUTH-123")
       .option("--squash", "Squash commits before the first push")
       .option("--no-squash", "Do not squash")
+      .option("--no-rebase", "Do not rebase onto the default branch before the first push")
       .action(async (taskId, opts, command) => {
         await runCommand("finish", command, () =>
-          finishCommand(cwdFrom(command), taskId, { squash: opts.squash }),
+          finishCommand(cwdFrom(command), taskId, { squash: opts.squash, rebase: opts.rebase }),
         );
       }),
   );
