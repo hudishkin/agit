@@ -123,6 +123,28 @@ describe("start", () => {
     assert.equal(await currentBranch(again.path), "agit/AUTH-123");
   });
 
+  test("stores title, body, and issue on the task", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123", {
+      title: "Fix login",
+      body: "Cover the timeout path.",
+      issue: "12",
+    });
+
+    const task = loadTask(work, "AUTH-123");
+    assert.equal(task.title, "Fix login");
+    assert.equal(task.body, "Cover the timeout path.");
+    assert.equal(task.issue, "12");
+  });
+
+  test("does not treat the task id as a GitHub issue", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+    assert.equal(loadTask(work, "AUTH-123").issue, undefined);
+
+    await assert.rejects(() => startCommand(work, "AUTH-123", { issue: "AUTH-123" }), TaskStateError);
+  });
+
   test("CLI start --json prints task state", async () => {
     const { work } = await readyRepo();
     const result = spawnSync(process.execPath, [bin, "start", "AUTH-123", "--json", "-C", work], {

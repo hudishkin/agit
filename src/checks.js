@@ -1,8 +1,18 @@
 import { spawn } from "node:child_process";
-import { createWriteStream, mkdirSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export const DEFAULT_TIMEOUT_SEC = 900;
+export const LOG_TAIL_LINES = 40;
+
+export function readLogTail(path, lines = LOG_TAIL_LINES) {
+  if (!path || !existsSync(path)) {
+    return "";
+  }
+  const text = readFileSync(path, "utf8");
+  const all = text.replace(/\n$/, "").split("\n");
+  return all.slice(-lines).join("\n");
+}
 
 function killProcessTree(child) {
   if (child.pid == null) {

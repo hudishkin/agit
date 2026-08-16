@@ -11,10 +11,10 @@ import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError } from "../src/errors.js";
 import { createDraftPr } from "../src/gh.js";
-import { currentBranch, logOneline } from "../src/git.js";
+import { currentBranch, isClean, logOneline } from "../src/git.js";
 import { loadProfile, saveProfile } from "../src/profile.js";
 import { loadTask } from "../src/taskstore.js";
-import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
+import { cloneRepo, createGitRepo, gitPushSetup, gitRun, taskWork } from "./helpers/git-harness.js";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
 const repos = [];
@@ -81,11 +81,17 @@ describe("finish", () => {
     const { work, origin } = await readyTask({ checks: ["false"] });
     const gh = fakePr();
 
-    await assert.rejects(() => finishCommand(work, "AUTH-123", gh), ChecksFailed);
+    const failure = await finishCommand(work, "AUTH-123", gh).then(
+      () => null,
+      (error) => error,
+    );
+    assert.ok(failure instanceof ChecksFailed);
     assert.equal(loadTask(work, "AUTH-123").status, "checks_failed");
     assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
     assert.equal(gh.calls.length, 0);
     assert.match(readFileSync(join(work, ".agit/logs/AUTH-123-checks.log"), "utf8"), /\$ false/);
+    assert.match(failure.details.log_tail, /\$ false/);
+    assert.match(failure.details.log_path, /AUTH-123-checks\.log$/);
   });
 
   test("pushes once and creates a draft PR", async () => {
@@ -106,6 +112,28 @@ describe("finish", () => {
     assert.match(gh.calls[0].body, /AUTH-123/);
     assert.match(gh.calls[0].body, /note\.txt/);
     assert.match(gh.calls[0].body, /`true`/);
+    assert.doesNotMatch(gh.calls[0].body, /Closes #123/);
+  });
+
+  test("uses start title, body, and issue in the draft PR", async () => {
+    const created = repo();
+    await initCommand(created.work, { yes: true, install: false, checks: ["true"] });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+    await startCommand(created.work, "AUTH-123", {
+      title: "Fix login",
+      body: "Cover the timeout path.",
+      issue: 12,
+    });
+    const tree = taskWork(created.work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+
+    const gh = fakePr();
+    await finishCommand(created.work, "AUTH-123", gh);
+    assert.equal(gh.calls[0].title, "AUTH-123: Fix login");
+    assert.match(gh.calls[0].body, /Cover the timeout path/);
+    assert.match(gh.calls[0].body, /Closes #12/);
   });
 
   test("second finish does not push again", async () => {
@@ -243,6 +271,50 @@ describe("finish", () => {
     } finally {
       process.env.PATH = previous;
     }
+  });
+
+  test("rebases onto origin/main before the first push", async () => {
+    const { work, origin, tree, root } = await readyTask();
+    const other = cloneRepo({ root, origin });
+    writeFileSync(join(other, "upstream.txt"), "from a teammate\n");
+    gitRun(other, ["add", "-A"]);
+    gitRun(other, ["commit", "-m", "upstream change"]);
+    gitPushSetup(other, ["origin", "main"]);
+
+    await finishCommand(work, "AUTH-123", fakePr());
+    const files = gitRun(tree, ["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert.match(files, /upstream\.txt/);
+    assert.match(files, /note\.txt/);
+  });
+
+  test("rebase conflict aborts and leaves a clean tree", async () => {
+    const { work, origin, tree, root } = await readyTask();
+    writeFileSync(join(tree, "README.md"), "task edit\n");
+    await commitCommand(tree, "AUTH-123: edit readme");
+
+    const other = cloneRepo({ root, origin });
+    writeFileSync(join(other, "README.md"), "upstream edit\n");
+    gitRun(other, ["add", "-A"]);
+    gitRun(other, ["commit", "-m", "upstream readme"]);
+    gitPushSetup(other, ["origin", "main"]);
+
+    await assert.rejects(() => finishCommand(work, "AUTH-123", fakePr()), /Could not rebase/);
+    assert.equal(await isClean(tree), true);
+    assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
+  });
+
+  test("skips rebase when --no-rebase is set", async () => {
+    const { work, tree, root, origin } = await readyTask();
+    const other = cloneRepo({ root, origin });
+    writeFileSync(join(other, "upstream.txt"), "from a teammate\n");
+    gitRun(other, ["add", "-A"]);
+    gitRun(other, ["commit", "-m", "upstream change"]);
+    gitPushSetup(other, ["origin", "main"]);
+
+    await finishCommand(work, "AUTH-123", { ...fakePr(), rebase: false });
+    const files = gitRun(tree, ["ls-tree", "-r", "--name-only", "HEAD"]);
+    assert.doesNotMatch(files, /upstream\.txt/);
+    assert.match(files, /note\.txt/);
   });
 
   test("refuses to squash after a push", async () => {

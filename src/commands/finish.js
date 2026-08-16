@@ -1,18 +1,20 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { runChecks } from "../checks.js";
+import { readLogTail, runChecks } from "../checks.js";
 import { ChecksFailed, DirtyTree, NotInitialized, PublishFailed, TaskStateError, WrongBranch } from "../errors.js";
 import { createDraftPr } from "../gh.js";
 import {
   commitSubject,
   currentBranch,
   diffNames,
+  fetch,
   firstCommitSubject,
   isAncestor,
   isClean,
   isRepo,
   logOneline,
   push,
+  rebaseOnto,
   refExists,
   remoteBranchSha,
   revParse,
@@ -58,7 +60,31 @@ async function resolveBase(cwd, task, profile) {
   );
 }
 
-export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squash } = {}) {
+async function rebaseOntoDefault(tree, profile, task) {
+  const upstream = `origin/${profile.repo.default_branch}`;
+  if (!(await refExists(tree, upstream))) {
+    return false;
+  }
+  if (await isAncestor(tree, upstream, "HEAD")) {
+    return false;
+  }
+
+  const result = await rebaseOnto(tree, upstream);
+  if (!result.ok) {
+    const files = result.files.length ? result.files.join(", ") : "unknown paths";
+    throw new TaskStateError(
+      `Could not rebase onto ${upstream}.`,
+      `Conflicts in ${files}. The worktree is clean again. Fix the overlap, or pass --no-rebase.`,
+      { conflicts: result.files, upstream },
+    );
+  }
+
+  task.base_ref = upstream;
+  task.base_sha = await revParse(tree, upstream);
+  return true;
+}
+
+export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squash, rebase } = {}) {
   assertTaskId(taskId);
 
   if (!(await isRepo(cwd))) {
@@ -128,7 +154,7 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
       };
     }
 
-    const base = await resolveBase(tree, task, profile);
+    let base = await resolveBase(tree, task, profile);
     const ahead = await logOneline(tree, `${base}..HEAD`);
     if (ahead.length === 0) {
       throw new TaskStateError("Nothing to publish.", "Run agit commit first.");
@@ -137,6 +163,16 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
     const needsPush = !wasPushed || publishedSha !== head;
 
     if (needsPush) {
+      if (!wasPushed && rebase !== false) {
+        if (!isolated) {
+          await fetch(tree);
+        }
+        if (await rebaseOntoDefault(tree, profile, task)) {
+          saveTask(root, task);
+          base = await resolveBase(tree, task, profile);
+        }
+      }
+
       const logPath = join(root, LOGS_DIR, `${taskId}-checks.log`);
       const checkResults = await runChecks(tree, profile.checks ?? [], logPath, {
         timeoutSec: profile.checks_timeout_sec,
@@ -150,7 +186,11 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
         throw new ChecksFailed(
           "Finish failed: checks did not pass.",
           `Fix the errors and run agit finish ${taskId} again.`,
-          { failed: failed.map((check) => check.command) },
+          {
+            failed: failed.map((check) => check.command),
+            log_path: logPath,
+            log_tail: readLogTail(logPath),
+          },
         );
       }
 
@@ -173,9 +213,11 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
         const publishedRemote = isolated ? await publishUrl(cwd, profile) : "origin";
         const remoteSha = await remoteBranchSha(tree, task.branch, publishedRemote);
         if (remoteSha && !(await isAncestor(tree, remoteSha, "HEAD"))) {
+          const localSha = await revParse(tree, "HEAD");
           throw new TaskStateError(
             "The task branch has diverged from what was already published.",
-            "agit never force-pushes. Reconcile locally, or open a new task id.",
+            `agit never force-pushes. Local HEAD is ${localSha}. Remote is ${remoteSha}. Reconcile locally, or run agit start with a new task id.`,
+            { local_sha: localSha, remote_sha: remoteSha },
           );
         }
       }
@@ -224,9 +266,16 @@ export async function finishCommand(cwd, taskId, { createPr = createDraftPr, squ
     }
 
     const subject = await commitSubject(tree);
-    const summary = summarizeCommit(taskId, subject);
+    const summary = task.title || summarizeCommit(taskId, subject);
     const title = formatTitle(profile.pr.title_template, taskId, summary);
-    const body = renderPrBody({ taskId, branch: task.branch, summary, checks, files });
+    const body = renderPrBody({
+      taskId,
+      branch: task.branch,
+      summary: task.body || summary,
+      checks,
+      files,
+      issue: task.issue ?? null,
+    });
 
     try {
       const repo =

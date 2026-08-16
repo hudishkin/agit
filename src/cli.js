@@ -84,8 +84,17 @@ export function createProgram() {
       .command("start")
       .description("Start a task branch")
       .argument("<task-id>", "Task id, for example AUTH-123")
-      .action(async (taskId, _opts, command) => {
-        await runCommand("start", command, () => startCommand(cwdFrom(command), taskId));
+      .option("--title <title>", "Title stored for the draft PR")
+      .option("--body <body>", "Body stored for the draft PR")
+      .option("--issue <number>", "GitHub issue to close from the draft PR")
+      .action(async (taskId, opts, command) => {
+        await runCommand("start", command, () =>
+          startCommand(cwdFrom(command), taskId, {
+            title: opts.title,
+            body: opts.body,
+            issue: opts.issue,
+          }),
+        );
       }),
   );
 
@@ -122,9 +131,10 @@ export function createProgram() {
       .argument("<task-id>", "Task id, for example AUTH-123")
       .option("--squash", "Squash commits before the first push")
       .option("--no-squash", "Do not squash")
+      .option("--no-rebase", "Do not rebase onto the default branch before the first push")
       .action(async (taskId, opts, command) => {
         await runCommand("finish", command, () =>
-          finishCommand(cwdFrom(command), taskId, { squash: opts.squash }),
+          finishCommand(cwdFrom(command), taskId, { squash: opts.squash, rebase: opts.rebase }),
         );
       }),
   );
@@ -153,8 +163,11 @@ export function createProgram() {
     program
       .command("doctor")
       .description("Report which protection layers are actually active")
-      .action(async (_opts, command) => {
-        await runCommand("doctor", command, () => doctorCommand(cwdFrom(command)));
+      .option("--fix", "Install missing hooks and agent guards")
+      .action(async (opts, command) => {
+        await runCommand("doctor", command, () =>
+          doctorCommand(cwdFrom(command), { fix: Boolean(opts.fix) }),
+        );
       }),
   );
 

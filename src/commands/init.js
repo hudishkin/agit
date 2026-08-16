@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { writeAgentsMd } from "../agentsmd.js";
+import { detectChecks } from "../detect-checks.js";
 import { installAgentGuardsCommand } from "./guards.js";
 import { AgitError, NotInitialized } from "../errors.js";
 import { defaultBranch, isRepo, remoteUrl } from "../git.js";
@@ -68,7 +69,11 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
   const detectedUrl = options.repo ?? current.repo.url ?? (await remoteUrl(cwd)) ?? undefined;
   const parsed = parseRepoUrl(detectedUrl);
   const branch = options.defaultBranch ?? current.repo.default_branch ?? (await defaultBranch(cwd));
-  const checks = options.checks?.length ? options.checks : current.checks;
+  const checks = options.checks?.length
+    ? options.checks
+    : existed && current.checks?.length
+      ? current.checks
+      : detectChecks(cwd);
   const enforcement = options.guardOnly
     ? "remote"
     : options.mode

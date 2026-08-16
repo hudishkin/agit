@@ -10,11 +10,12 @@ import {
   CURSOR_HOOK_COMMAND,
   readGuardConfig,
 } from "../guardfiles.js";
-import { hookPath, hooksInstalled } from "../hooks.js";
+import { hookPath, hooksInstalled, installHooks } from "../hooks.js";
 import { inspectIsolation } from "../mirror.js";
 import { listPruneCandidates, staleHint } from "../prune.js";
-import { loadProfile, profileExists } from "../profile.js";
+import { enforcementOf, loadProfile, profileExists } from "../profile.js";
 import { agitRoot } from "../root.js";
+import { installAgentGuardsCommand } from "./guards.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -319,9 +320,31 @@ async function checkGitLayer(checks, cwd, profile) {
   add(checks, "git", "pre_push_hook", "ok", `pre-push hook is active at ${path}`);
 }
 
-export async function doctorCommand(cwd) {
+export async function doctorCommand(cwd, { fix = false } = {}) {
   const checks = [];
   const { repo, profile } = await checkEnvironment(checks, cwd);
+
+  let fixed = null;
+  if (fix) {
+    if (!repo || !profile) {
+      add(checks, "environment", "fix", "fail", "Cannot apply --fix until this directory is a Git repo with agit init");
+    } else {
+      const hook = await installHooks(cwd, profile);
+      const guards = await installAgentGuardsCommand(cwd, {
+        claude: true,
+        cursor: true,
+        copilot: true,
+        enforcement: enforcementOf(profile),
+      });
+      fixed = {
+        hooks: Boolean(hook),
+        hook_backup: hook?.backup ?? null,
+        guards: guards.guards ?? [],
+        files: guards.files ?? [],
+      };
+      add(checks, "environment", "fix", "ok", "Reinstalled the pre-push hook and agent guards");
+    }
+  }
 
   await checkServerLayer(checks, profile);
 
@@ -382,6 +405,7 @@ export async function doctorCommand(cwd) {
   return {
     ok: !failed,
     checks,
+    fixed,
     message: lines.join("\n"),
   };
 }

@@ -110,16 +110,20 @@ agit doctor             # confirm what is actually active
 agit init [--mode remote|protocol|patch]
                             Prepare this repository (default: remote)
 agit start <task-id>        Create or resume a task worktree
+agit start --title --body --issue
+                            Store PR title, body, and a GitHub issue
 agit commit -m "..."        Local commit, never a push
 agit commit --files a b     Commit only these paths
 agit finish <task-id>       Checks → push → draft PR
 agit finish --squash        Squash commits before the first push
+agit finish --no-rebase     Skip rebase onto the default branch before the first push
 agit status [task-id]       Task state
 agit status --all           Every task: path, age, dirty, PR
 agit abort <task-id>        Drop a local task and its branch
 agit prune                  List stale worktrees (dry-run)
 agit prune --apply          Delete stale worktrees and local branches
 agit doctor                 Report which protection layers are active
+agit doctor --fix           Reinstall the pre-push hook and agent guards
 agit protect [--apply]      Show or create the GitHub ruleset
 agit isolate [--undo]       Point this clone's origin at a local mirror
 agit prompt <task-id>       Copy-paste prompt for an agent
@@ -148,7 +152,37 @@ commit:
   scan_contents: true
 ```
 
+`init --yes` without `--checks` looks at the repo (`package.json` scripts.test, pytest, cargo, go) and writes what it finds. Existing non-empty `checks` are left alone.
+
 Existing profiles without `enforcement` stay on `protocol`. Isolation lives in this clone's git config, not in the profile.
+
+These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `allow_direct_push`, `allow_force_push`. Review-loop pushes after the first `finish` are allowed.
+
+## End-to-end
+
+**One agent, one PR.** `agit start AUTH-123 --title "Fix login" --issue 12`. Work in the printed path. Commit there. A human runs `agit finish AUTH-123`. Checks run, the branch is pushed, a draft PR opens with that title and `Closes #12`.
+
+**Two agents in parallel.** `agit start AUTH-123` and `agit start TESTS-124`. Each worktree has its own dirty tree. `agit status --all` shows both. `agit finish` from the main checkout publishes one task.
+
+**Review loop.** After review comments, commit in the same worktree and run `agit finish AUTH-123` again. It pushes to the same draft PR. It does not force-push.
+
+## Troubleshooting
+
+- **Checks failed.** Read `.agit/logs/<task-id>-checks.log`, fix, run `agit finish` again.
+- **Branch diverged after publish.** agit never force-pushes. Reconcile locally or start a new task id.
+- **`gh` missing or not logged in.** Push may have succeeded. Install and authenticate GitHub CLI, then `agit finish` again to open the PR.
+- **`abort` refuses.** The worktree is dirty, or the task was already published. Commit/restore, or close the PR yourself.
+- **Stale worktrees.** `agit abort` drops one unpublished task. `agit status --all` lists the rest.
+
+## agit vs git worktree vs worktrunk
+
+| | agit | `git worktree` | worktrunk |
+| --- | --- | --- | --- |
+| Isolate a working tree | yes | yes | yes |
+| One task → one branch → one draft PR | yes | no | no |
+| Local checks before publish | yes | no | optional |
+| Agent publish boundary | yes | no | no |
+| You still review and merge | yes | yes | yes |
 
 ## Advanced workflows
 

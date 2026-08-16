@@ -24,3 +24,4 @@
 ## Risks / notes
 
 -
+{closes}

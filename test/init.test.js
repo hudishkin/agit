@@ -158,6 +158,24 @@ describe("init", () => {
     assert.equal(result.install.reason, "added");
   });
 
+  test("detects npm test from package.json when --checks is omitted", async () => {
+    const { work } = repo();
+    writeFileSync(join(work, "package.json"), JSON.stringify({ name: "app", scripts: { test: "node --test" } }));
+
+    const result = await initCommand(work, { yes: true, install: false });
+    assert.deepEqual(result.checks, ["npm test"]);
+    assert.deepEqual(loadProfile(work).checks, ["npm test"]);
+  });
+
+  test("does not overwrite existing non-empty checks", async () => {
+    const { work } = repo();
+    await initCommand(work, { yes: true, install: false, checks: ["true"] });
+    writeFileSync(join(work, "package.json"), JSON.stringify({ name: "app", scripts: { test: "node --test" } }));
+
+    await initCommand(work, { yes: true, install: false });
+    assert.deepEqual(loadProfile(work).checks, ["true"]);
+  });
+
   test("CLI init --json --no-install succeeds", () => {
     const { work } = repo();
     const result = spawnSync(process.execPath, [bin, "init", "--yes", "--no-install", "--json", "-C", work], {
