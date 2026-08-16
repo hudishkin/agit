@@ -114,6 +114,7 @@ agit commit -m "..."        Local commit, never a push
 agit commit --files a b     Commit only these paths
 agit finish <task-id>       Checks → push → draft PR
 agit finish --squash        Squash commits before the first push
+agit finish --no-rebase     Skip rebase onto the default branch before the first push
 agit status [task-id]       Task state
 agit status --all           Every task and its worktree path
 agit abort <task-id>        Drop a local task (not after publish)

@@ -46,4 +46,17 @@ describe("output", () => {
 
     assert.equal(stderr.text(), "Finish failed: checks did not pass.\nFix the errors and retry.\n");
   });
+
+  test("human error prints the checks log tail", () => {
+    const stderr = capture();
+    const error = new ChecksFailed("Finish failed: checks did not pass.", "Fix the errors and retry.", {
+      log_path: "/tmp/checks.log",
+      log_tail: "$ false\nexit 1",
+    });
+
+    renderError("finish", error, { json: false, stderr: stderr.stream });
+
+    assert.match(stderr.text(), /\$ false/);
+    assert.match(stderr.text(), /Full log: \/tmp\/checks.log/);
+  });
 });

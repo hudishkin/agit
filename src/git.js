@@ -241,6 +241,29 @@ export async function firstCommitSubject(cwd, base) {
   return output.split("\n").filter(Boolean)[0] ?? commitSubject(cwd);
 }
 
+export async function conflictedFiles(cwd) {
+  const output = await runGit(cwd, ["diff", "--name-only", "--diff-filter=U"], { allowFail: true });
+  if (!output) {
+    return [];
+  }
+  return output.split("\n").filter(Boolean);
+}
+
+export async function rebaseAbort(cwd) {
+  await runGit(cwd, ["rebase", "--abort"], { allowFail: true });
+}
+
+export async function rebaseOnto(cwd, upstream) {
+  try {
+    await runGit(cwd, ["rebase", upstream]);
+    return { ok: true, files: [] };
+  } catch (error) {
+    const files = await conflictedFiles(cwd);
+    await rebaseAbort(cwd);
+    return { ok: false, files, error: error.message };
+  }
+}
+
 export async function squashCommits(cwd, base, message) {
   const original = await revParse(cwd, "HEAD");
   const mergeBase = await runGit(cwd, ["merge-base", base, "HEAD"]);

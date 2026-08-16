@@ -104,7 +104,14 @@ describe("regression: review loop", () => {
     writeFileSync(join(tree, "c.txt"), "rewritten\n");
     await commitCommand(tree, "T1: rewritten");
 
-    await assert.rejects(() => finishCommand(work, "T1", { createPr: pr.createPr }), /diverged/);
+    const error = await finishCommand(work, "T1", { createPr: pr.createPr }).then(
+      () => null,
+      (err) => err,
+    );
+    assert.match(error.message, /diverged/);
+    assert.match(error.hint, /Local HEAD is/);
+    assert.match(error.hint, /Remote is/);
+    assert.equal(error.details.remote_sha, published);
     assert.equal(gitRun(origin, ["rev-parse", "agit/T1"]).trim(), published);
   });
 });
