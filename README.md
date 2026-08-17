@@ -60,6 +60,24 @@ store: home
 
 Or set `AGIT_STORE=home` for one command. An in-repo `.agit/profile.yml` still wins.
 
+## Editor skill
+
+`AGIT.md` is a ready Cursor / Claude Code skill. Copy it once into the editor — no `agit init` in the target repo:
+
+```bash
+# Cursor
+mkdir -p ~/.cursor/skills/agit
+cp AGIT.md ~/.cursor/skills/agit/SKILL.md
+
+# Claude Code
+mkdir -p ~/.claude/skills/agit
+cp AGIT.md ~/.claude/skills/agit/SKILL.md
+```
+
+From a published install: `cp "$(npm root -g)/@hudishkin/agit/AGIT.md" ~/.cursor/skills/agit/SKILL.md`.
+
+The skill tells the agent to use `npx @hudishkin/agit` and the home store, so the working tree stays clean. A human still runs `agit finish`.
+
 ## Why this workflow
 
 ```text

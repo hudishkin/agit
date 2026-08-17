@@ -12,7 +12,8 @@
   "files": [
     "bin",
     "src",
-    "templates"
+    "templates",
+    "AGIT.md"
   ],
   "scripts": {
     "test": "node --test test/*.test.js test/regression/*.test.js",
