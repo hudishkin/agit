@@ -20,29 +20,22 @@ import {
   profileExists,
   saveProfile,
 } from "../profile.js";
+import {
+  loadStoreProfile,
+  normalizeStoreKind,
+  parseRepoUrl,
+  resolveStore,
+  saveStoreProfile,
+  STORE_KINDS,
+  storeHasProfile,
+  storeProfilePath,
+  writeStoreSource,
+} from "../store.js";
+
+export { parseRepoUrl };
 
 const execFileAsync = promisify(execFile);
 
-export function parseRepoUrl(url) {
-  if (!url) {
-    return {};
-  }
-
-  const github = String(url).match(/github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/i);
-  if (github) {
-    return { url, owner: github[1], name: github[2] };
-  }
-
-  const gitlab = String(url).match(/(?:^|@|\/\/)([^/:]*gitlab[^/:]*)[:/](.+?)(?:\.git)?$/i);
-  if (gitlab) {
-    const parts = gitlab[2].replace(/\/+$/, "").split("/").filter(Boolean);
-    if (parts.length >= 2) {
-      return { url, owner: parts.slice(0, -1).join("/"), name: parts.at(-1) };
-    }
-  }
-
-  return { url };
-}
 
 export function packageHasAgit(pkg) {
   return Boolean(pkg.dependencies?.[PACKAGE_NAME] || pkg.devDependencies?.[PACKAGE_NAME]);
@@ -73,8 +66,22 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     });
   }
 
-  const existed = profileExists(cwd);
-  const current = existed ? loadProfile(cwd) : DEFAULT_PROFILE;
+  if (options.store && !STORE_KINDS.includes(options.store)) {
+    throw new AgitError({
+      code: "error",
+      message: `Unknown store: ${options.store}`,
+      hint: "Use --store repo or --store home.",
+    });
+  }
+
+  const storeKind = normalizeStoreKind(options.store);
+  const store = await resolveStore(cwd, { preferred: storeKind });
+  const existed = storeKind === "home" ? storeHasProfile(store) : profileExists(cwd);
+  const current = existed
+    ? storeKind === "home"
+      ? loadStoreProfile(store)
+      : loadProfile(cwd)
+    : DEFAULT_PROFILE;
   const detectedUrl = options.repo ?? current.repo.url ?? (await remoteUrl(cwd)) ?? undefined;
   const parsed = parseRepoUrl(detectedUrl);
   const branch = options.defaultBranch ?? current.repo.default_branch ?? (await defaultBranch(cwd));
@@ -110,14 +117,22 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     },
   };
 
-  saveProfile(cwd, profile);
-  const gitignore = ensureGitignore(cwd);
-  writeAgentsMd(cwd, undefined, enforcement);
-  const setup = writeSetupAgent(cwd);
-  const prTemplate = writePrTemplate(cwd);
+  const home = storeKind === "home";
+  if (home) {
+    writeStoreSource(store);
+    saveStoreProfile(store, profile);
+  } else {
+    saveProfile(cwd, profile);
+  }
+  const gitignore = home ? { added: [] } : ensureGitignore(cwd);
+  if (!home) {
+    writeAgentsMd(cwd, undefined, enforcement);
+  }
+  const setup = home ? null : writeSetupAgent(cwd);
+  const prTemplate = home ? { path: null, written: false } : writePrTemplate(cwd);
   const hook = options.hooks === false ? null : await installHooks(cwd, profile);
   const rules =
-    options.rules === false
+    home || options.rules === false
       ? { files: [] }
       : await installAgentGuardsCommand(cwd, {
           claude: true,
@@ -127,7 +142,9 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
         });
 
   let install = { attempted: false, installed: false, reason: "skipped" };
-  if (options.install !== false) {
+  if (home) {
+    install = { attempted: false, installed: false, reason: "home_store" };
+  } else if (options.install !== false) {
     const packagePath = join(cwd, "package.json");
     if (!existsSync(packagePath)) {
       install = { attempted: false, installed: false, reason: "no_package_json" };
@@ -143,8 +160,10 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
   }
 
   return {
-    profile: ".agit/profile.yml",
-    agents: "AGENTS.md",
+    profile: home ? storeProfilePath(store) : ".agit/profile.yml",
+    store: storeKind,
+    store_dir: home ? store.dir : join(cwd, ".agit"),
+    agents: home ? null : "AGENTS.md",
     gitignore: gitignore.added,
     default_branch: profile.repo.default_branch,
     enforcement,
@@ -157,7 +176,9 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     rules: rules.files,
     guards: rules.guards ?? [],
     message: [
-      "Initialized agit.",
+      home
+        ? `Initialized agit in ${store.dir}. The repository working tree was not changed.`
+        : "Initialized agit.",
       hook?.backup ? `Backed up your previous pre-push hook to ${hook.backup}` : null,
       "Next: agit protect (server-side rules), agit isolate (local mirror), then agit start <task-id>",
     ]

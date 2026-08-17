@@ -14,8 +14,8 @@ import { hookPath, hooksInstalled, installHooks } from "../hooks.js";
 import { inspectIsolation } from "../mirror.js";
 import { listPruneCandidates, staleHint } from "../prune.js";
 import { providerOf } from "../prhost.js";
-import { enforcementOf, loadProfile, profileExists } from "../profile.js";
-import { agitRoot } from "../root.js";
+import { enforcementOf } from "../profile.js";
+import { loadWorkspace } from "../store.js";
 import { installAgentGuardsCommand } from "./guards.js";
 
 const execFileAsync = promisify(execFile);
@@ -77,10 +77,22 @@ async function checkEnvironment(checks, cwd) {
   );
 
   let profile = null;
-  if (repo && profileExists(cwd)) {
+  let store = null;
+  if (repo) {
     try {
-      profile = loadProfile(cwd);
-      add(checks, "environment", "profile", "ok", "Loaded .agit/profile.yml");
+      const workspace = await loadWorkspace(cwd, { required: false });
+      store = workspace.store;
+      profile = workspace.profile;
+    } catch {
+      store = null;
+      profile = null;
+    }
+  }
+  if (profile) {
+    try {
+      const location = store?.kind === "home" ? store.dir : ".agit/profile.yml";
+      add(checks, "environment", "profile", "ok", `Loaded ${location}`);
+      add(checks, "environment", "store", "ok", store?.kind === "home" ? `Store is home (${store.dir})` : "Store is in the repository");
       add(
         checks,
         "environment",
@@ -106,7 +118,7 @@ async function checkEnvironment(checks, cwd) {
       add(checks, "environment", "profile", "fail", ".agit/profile.yml exists but cannot be parsed");
     }
   } else {
-    add(checks, "environment", "profile", "fail", "agit is not initialized. Run agit init --yes");
+    add(checks, "environment", "profile", "fail", "agit is not initialized. Run agit init --yes or agit init --yes --store home");
   }
 
   const agitOnPath = await hasCommand("agit");
@@ -134,8 +146,7 @@ async function checkEnvironment(checks, cwd) {
 
   if (repo && profile) {
     try {
-      const root = await agitRoot(cwd);
-      const stale = await listPruneCandidates(root, profile);
+      const stale = await listPruneCandidates(store, profile);
       const hint = staleHint(stale.length);
       add(
         checks,

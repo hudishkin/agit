@@ -45,6 +45,39 @@ npx agit init --yes --checks "npm test"
 
 `init` writes `.agit/profile.yml`, merges an agit section into `AGENTS.md`, and installs the pre-push hook and agent guards. It does not rewrite `origin`.
 
+To keep agit state out of the working tree (no `.agit/` in the repo):
+
+```bash
+npx agit init --yes --store home
+```
+
+That writes `~/.agit/<project>/` (profile, tasks, worktrees, logs). The project id is `{owner}-{name}-{hash}` from the remote and the clone path. Override the parent directory with `AGIT_HOME`. Make home the default for repos without an in-repo profile:
+
+```yaml
+# ~/.agit/config.yml
+store: home
+```
+
+Or set `AGIT_STORE=home` for one command. An in-repo `.agit/profile.yml` still wins.
+
+## Editor skill
+
+`AGIT.md` is a ready Cursor / Claude Code skill. Copy it once into the editor — no `agit init` in the target repo:
+
+```bash
+# Cursor
+mkdir -p ~/.cursor/skills/agit
+cp AGIT.md ~/.cursor/skills/agit/SKILL.md
+
+# Claude Code
+mkdir -p ~/.claude/skills/agit
+cp AGIT.md ~/.claude/skills/agit/SKILL.md
+```
+
+From a published install: `cp "$(npm root -g)/@hudishkin/agit/AGIT.md" ~/.cursor/skills/agit/SKILL.md`.
+
+The skill tells the agent to use `npx @hudishkin/agit` and the home store, so the working tree stays clean. A human still runs `agit finish`.
+
 ## Why this workflow
 
 ```text
@@ -107,8 +140,8 @@ agit doctor             # confirm what is actually active
 ## Commands
 
 ```text
-agit init [--mode remote|protocol|patch]
-                            Prepare this repository (default: remote)
+agit init [--mode remote|protocol|patch] [--store repo|home]
+                            Prepare this repository (default: remote, repo store)
 agit start <task-id>        Create or resume a task worktree
 agit start --title --body --issue
                             Store PR title, body, and a GitHub issue

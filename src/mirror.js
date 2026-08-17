@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { fetch, getConfig, remoteUrl, setConfig, setRemoteUrl, unsetConfig } from "./git.js";
 import { MIRROR_DIR } from "./paths.js";
 import { agitRoot } from "./root.js";
+import { resolveStore, storeMirrorPath } from "./store.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,7 +27,11 @@ export function mirrorPath(root) {
 
 export async function resolveMirrorDir(cwd) {
   try {
-    return mirrorPath(await agitRoot(cwd));
+    const store = await resolveStore(cwd);
+    if (store.kind === "home") {
+      return storeMirrorPath(store);
+    }
+    return mirrorPath(store.root);
   } catch {
     return mirrorPath(cwd);
   }
@@ -64,7 +69,7 @@ export function isMirrorUrl(cwd, url) {
   if (normalized === normalizeGitUrl(mirrorPath(cwd))) {
     return true;
   }
-  return /(?:^|\/)\.agit\/mirror\.git$/.test(normalized);
+  return /(?:^|\/)\.agit\/(?:[^/]+\/)?mirror\.git$/.test(normalized);
 }
 
 export async function originPointsAtMirror(cwd) {

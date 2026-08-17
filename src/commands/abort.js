@@ -1,29 +1,22 @@
 import { existsSync } from "node:fs";
-import { DirtyTree, NotInitialized, TaskStateError } from "../errors.js";
-import { deleteBranch, isClean, isRepo, removeWorktree } from "../git.js";
+import { DirtyTree, TaskStateError } from "../errors.js";
+import { deleteBranch, isClean, removeWorktree } from "../git.js";
 import { withTaskLock } from "../lock.js";
-import { profileExists } from "../profile.js";
-import { agitRoot, resolveTaskTree } from "../root.js";
+import { resolveTaskTree } from "../root.js";
+import { loadWorkspace } from "../store.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
 
 export async function abortCommand(cwd, taskId) {
   assertTaskId(taskId);
 
-  if (!(await isRepo(cwd))) {
-    throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
-  }
-
-  if (!profileExists(cwd)) {
-    throw new NotInitialized("agit is not initialized.");
-  }
-
-  const root = await agitRoot(cwd);
-  if (!taskExists(root, taskId)) {
+  const { store, root } = await loadWorkspace(cwd);
+  const state = store.dir;
+  if (!taskExists(state, taskId)) {
     throw new TaskStateError(`Task ${taskId} was not found.`, "Run agit start <task-id> first.");
   }
 
-  return withTaskLock(root, taskId, async () => {
-    const task = loadTask(root, taskId);
+  return withTaskLock(state, taskId, async () => {
+    const task = loadTask(state, taskId);
     if (task.publish?.pushed || task.status === "pr_created" || task.status === "pushed") {
       throw new TaskStateError(
         `Task ${taskId} was already published.`,
@@ -31,7 +24,7 @@ export async function abortCommand(cwd, taskId) {
       );
     }
 
-    const tree = resolveTaskTree(root, task, cwd);
+    const tree = resolveTaskTree(store, task, cwd);
     if (existsSync(tree) && tree !== root) {
       if (!(await isClean(tree))) {
         throw new DirtyTree("Working tree is not clean.");
@@ -46,7 +39,7 @@ export async function abortCommand(cwd, taskId) {
     await deleteBranch(root, task.branch);
 
     task.status = "aborted";
-    saveTask(root, task);
+    saveTask(state, task);
 
     return {
       task_id: taskId,

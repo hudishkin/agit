@@ -1,20 +1,10 @@
-import { AgitError, NotInitialized } from "../errors.js";
-import { isRepo } from "../git.js";
+import { AgitError } from "../errors.js";
 import { ensureGitignore } from "../gitignore.js";
 import { disableIsolation, enableIsolation, inspectIsolation } from "../mirror.js";
-import { loadProfile, profileExists } from "../profile.js";
-import { agitRoot } from "../root.js";
+import { loadWorkspace } from "../store.js";
 
 export async function isolateCommand(cwd, { undo = false } = {}) {
-  if (!(await isRepo(cwd))) {
-    throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
-  }
-
-  if (!profileExists(cwd)) {
-    throw new NotInitialized("agit is not initialized.");
-  }
-
-  const profile = loadProfile(cwd);
+  const { store, profile } = await loadWorkspace(cwd);
 
   if (undo) {
     const state = await inspectIsolation(cwd, profile);
@@ -44,7 +34,9 @@ export async function isolateCommand(cwd, { undo = false } = {}) {
 
   try {
     const { mirror, push_url, already } = await enableIsolation(cwd, profile);
-    ensureGitignore(await agitRoot(cwd));
+    if (store.kind === "repo") {
+      ensureGitignore(store.root);
+    }
 
     return {
       isolated: true,

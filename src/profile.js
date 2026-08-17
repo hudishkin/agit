@@ -63,20 +63,31 @@ export function profilePath(cwd) {
   return join(cwd, PROFILE_FILE);
 }
 
-export function profileExists(cwd) {
-  return existsSync(profilePath(cwd));
+export function profileExistsAt(path) {
+  return existsSync(path);
 }
 
-export function loadProfile(cwd) {
-  const raw = yaml.load(readFileSync(profilePath(cwd), "utf8")) ?? {};
+export function profileExists(cwd) {
+  return profileExistsAt(profilePath(cwd));
+}
+
+export function loadProfileAt(path) {
+  const raw = yaml.load(readFileSync(path, "utf8")) ?? {};
   return deepMerge(DEFAULT_PROFILE, raw);
 }
 
-export function saveProfile(cwd, profile) {
-  const path = profilePath(cwd);
+export function loadProfile(cwd) {
+  return loadProfileAt(profilePath(cwd));
+}
+
+export function saveProfileAt(path, profile) {
   mkdirSync(dirname(path), { recursive: true });
   const body = yaml.dump(profile, { lineWidth: 120, noRefs: true });
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, body);
   renameSync(tmp, path);
+}
+
+export function saveProfile(cwd, profile) {
+  saveProfileAt(profilePath(cwd), profile);
 }

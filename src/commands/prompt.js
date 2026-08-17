@@ -1,13 +1,12 @@
-import { enforcementOf, loadProfile, profileExists } from "../profile.js";
-import { agitRoot, resolveTaskTree, worktreeAbsPath } from "../root.js";
+import { enforcementOf } from "../profile.js";
+import { resolveTaskTree, worktreeAbsPath } from "../root.js";
+import { loadWorkspace } from "../store.js";
 import { assertTaskId, loadTask, taskExists } from "../taskstore.js";
 
-function enforcementFrom(cwd) {
-  if (!profileExists(cwd)) {
-    return "protocol";
-  }
+async function enforcementFrom(cwd) {
   try {
-    return enforcementOf(loadProfile(cwd));
+    const { profile } = await loadWorkspace(cwd, { required: false });
+    return profile ? enforcementOf(profile) : "protocol";
   } catch {
     return "protocol";
   }
@@ -65,19 +64,19 @@ Read-only Git is allowed: git status, git diff, git log.
 
 export async function promptCommand(cwd, taskId) {
   assertTaskId(taskId);
-  const enforcement = enforcementFrom(cwd);
+  const enforcement = await enforcementFrom(cwd);
   let path = null;
   let title = null;
   let body = null;
   try {
-    const root = await agitRoot(cwd);
-    if (taskExists(root, taskId)) {
-      const task = loadTask(root, taskId);
-      path = resolveTaskTree(root, task, cwd);
+    const { store } = await loadWorkspace(cwd, { required: false });
+    if (store && taskExists(store.dir, taskId)) {
+      const task = loadTask(store.dir, taskId);
+      path = resolveTaskTree(store, task, cwd);
       title = task.title ?? null;
       body = task.body ?? null;
-    } else {
-      path = worktreeAbsPath(root, taskId);
+    } else if (store) {
+      path = worktreeAbsPath(store, taskId);
     }
   } catch {
     path = null;

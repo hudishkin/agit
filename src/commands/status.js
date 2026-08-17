@@ -1,8 +1,7 @@
-import { NotInitialized, TaskStateError } from "../errors.js";
-import { currentBranch, isRepo } from "../git.js";
+import { TaskStateError } from "../errors.js";
+import { currentBranch } from "../git.js";
 import { listPruneCandidates, staleHint } from "../prune.js";
-import { loadProfile, profileExists } from "../profile.js";
-import { agitRoot } from "../root.js";
+import { loadWorkspace } from "../store.js";
 import { enrichTask } from "../taskinfo.js";
 import { listTaskIds, loadTask, taskExists } from "../taskstore.js";
 import { taskIdFromBranch } from "./commit.js";
@@ -72,23 +71,15 @@ function formatTable(tasks) {
 }
 
 export async function statusCommand(cwd, taskId, { all = false } = {}) {
-  if (!(await isRepo(cwd))) {
-    throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
-  }
-
-  if (!profileExists(cwd)) {
-    throw new NotInitialized("agit is not initialized.");
-  }
-
-  const root = await agitRoot(cwd);
-  const profile = loadProfile(cwd);
+  const { store, profile, root } = await loadWorkspace(cwd);
+  const state = store.dir;
 
   if (all) {
     const tasks = [];
-    for (const id of listTaskIds(root)) {
-      tasks.push(await enrichTask(root, loadTask(root, id), cwd));
+    for (const id of listTaskIds(state)) {
+      tasks.push(await enrichTask(store, loadTask(state, id), cwd));
     }
-    const stale = await listPruneCandidates(root, profile);
+    const stale = await listPruneCandidates(store, profile);
     const hint = staleHint(stale.length);
     const body =
       tasks.length === 0
@@ -112,13 +103,14 @@ export async function statusCommand(cwd, taskId, { all = false } = {}) {
     }
   }
 
-  if (!taskExists(root, resolvedId)) {
+  if (!taskExists(state, resolvedId)) {
     throw new TaskStateError(`Task ${resolvedId} was not found.`, "Run agit start <task-id> first.");
   }
 
-  const data = await enrichTask(root, loadTask(root, resolvedId), cwd);
+  const data = await enrichTask(store, loadTask(state, resolvedId), cwd);
   return {
     ...data,
+    store: { kind: store.kind, dir: store.dir },
     message: formatTask(data),
   };
 }

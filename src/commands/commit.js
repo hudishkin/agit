@@ -1,8 +1,7 @@
 import { findDeniedFiles } from "../denylist.js";
-import { DenylistHit, EmptyCommit, NotInitialized, WrongBranch } from "../errors.js";
-import { add, commit, currentBranch, isRepo, listCommitCandidates } from "../git.js";
-import { loadProfile, profileExists } from "../profile.js";
-import { agitRoot } from "../root.js";
+import { DenylistHit, EmptyCommit, WrongBranch } from "../errors.js";
+import { add, commit, currentBranch, listCommitCandidates } from "../git.js";
+import { loadWorkspace } from "../store.js";
 import { scanFilesForSecrets } from "../secretscan.js";
 import { loadTask, saveTask, taskExists } from "../taskstore.js";
 
@@ -36,20 +35,12 @@ function resolveFiles(candidates, requested, scope) {
 }
 
 export async function commitCommand(cwd, message, { files: requested } = {}) {
-  if (!(await isRepo(cwd))) {
-    throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
-  }
-
-  if (!profileExists(cwd)) {
-    throw new NotInitialized("agit is not initialized.");
-  }
+  const { store, profile } = await loadWorkspace(cwd);
+  const state = store.dir;
 
   if (!message?.trim()) {
     throw new EmptyCommit("Commit message is required.", 'Run: agit commit -m "<task-id>: <summary>"');
   }
-
-  const root = await agitRoot(cwd);
-  const profile = loadProfile(cwd);
   const branch = await currentBranch(cwd);
 
   if (branch === profile.repo.default_branch) {
@@ -57,11 +48,11 @@ export async function commitCommand(cwd, message, { files: requested } = {}) {
   }
 
   const taskId = taskIdFromBranch(branch, profile.workflow.branch_prefix);
-  if (!taskId || !taskExists(root, taskId)) {
+  if (!taskId || !taskExists(state, taskId)) {
     throw new WrongBranch(`No agit task for branch ${branch}.`, "Run agit start <task-id> first.");
   }
 
-  const task = loadTask(root, taskId);
+  const task = loadTask(state, taskId);
   if (task.branch !== branch) {
     throw new WrongBranch(`Current branch ${branch} does not match task ${taskId}.`);
   }
@@ -97,7 +88,7 @@ export async function commitCommand(cwd, message, { files: requested } = {}) {
   const hash = await commit(cwd, message, files);
   task.commits = [...(task.commits ?? []), hash];
   task.status = "committed";
-  saveTask(root, task);
+  saveTask(state, task);
 
   return {
     task_id: taskId,
