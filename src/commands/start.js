@@ -18,7 +18,7 @@ import { enableIsolation, inspectIsolation, syncMirror } from "../mirror.js";
 import { enforcementOf, sandboxOf } from "../profile.js";
 import { resolveTaskTree, worktreeAbsPath, worktreeRelPath } from "../root.js";
 import { applySandbox, lockWorktreeCredentials } from "../sandbox.js";
-import { loadWorkspace } from "../store.js";
+import { loadWorkspace, saveStoreProfile } from "../store.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
 
 function nextHint(taskId, enforcement, path, sandbox = "off") {
@@ -148,17 +148,32 @@ function applyMetadata(task, { title, body, issue } = {}) {
   return task;
 }
 
+function enableRequestedSandbox(store, profile, requested) {
+  if (!requested || sandboxOf(profile) === "agents") {
+    return profile;
+  }
+  const next = {
+    ...profile,
+    workflow: { ...profile.workflow, sandbox: "agents" },
+  };
+  saveStoreProfile(store, next);
+  return next;
+}
+
 export async function startCommand(cwd, taskId, metadata = {}) {
   assertTaskId(taskId);
 
-  const { store, profile, root } = await loadWorkspace(cwd);
+  const { store, profile: loaded, root } = await loadWorkspace(cwd);
+  let profile = loaded;
+  const requestedSandbox = Boolean(metadata.sandbox);
+  const sandbox = requestedSandbox || sandboxOf(profile) === "agents";
   const state = store.dir;
   const branch = `${profile.workflow.branch_prefix}${taskId}`;
   const base = profile.repo.default_branch ?? (await defaultBranch(cwd));
   const url = await remoteUrl(cwd);
   let isolated = (await inspectIsolation(cwd, profile)).isolated;
 
-  if (sandboxOf(profile) === "agents" && !isolated) {
+  if (sandbox && !isolated) {
     try {
       await enableIsolation(cwd, profile);
       if (store.kind === "repo") {
@@ -179,6 +194,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
 
   return withTaskLock(state, taskId, async () => {
     if (taskExists(state, taskId)) {
+      profile = enableRequestedSandbox(store, profile, requestedSandbox);
       const task = loadTask(state, taskId);
       const intended = worktreeAbsPath(store, taskId);
       if (!existsSync(intended) && !(await branchExists(root, task.branch))) {
@@ -241,6 +257,8 @@ export async function startCommand(cwd, taskId, metadata = {}) {
         "Commit or stash those changes, or set workflow.require_clean_tree_on_start: false.",
       );
     }
+
+    profile = enableRequestedSandbox(store, profile, requestedSandbox);
 
     const { ref: startPoint, note } = await resolveStartPoint(root, base, Boolean(url), {
       preferOrigin: isolated,

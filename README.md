@@ -128,7 +128,7 @@ Hooks are first-class for **Cursor** and **Claude Code**. Other agents can still
 2. **Agent guards** — Cursor `beforeShellExecution` and Claude Code `PreToolUse` call `agit guard`. In the default workflow, direct publishing is discouraged. In `protocol`, git mutations are redirected to agit.
 3. **pre-push hook** — a raw `git push` fails unless `agit finish` issued a one-use token. Works alongside husky.
 4. **Local mirror (optional)** — `agit isolate` points this clone's `origin` at `.agit/mirror.git`. Everyday `git push` stays local. Undo with `agit isolate --undo`.
-5. **Agent OS sandbox (opt-in)** — `agit init --sandbox` sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs, points origin at the local mirror, and locks git credentials in the task worktree. `agit finish` still pushes with host credentials from the main checkout. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. Cursor can still read `~/.ssh`; `GH_TOKEN` in your shell is for finish, not for the agent worktree.
+5. **Agent OS sandbox (opt-in)** — `agit start --sandbox` (or `agit init --sandbox`) sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs, points origin at the local mirror, and locks git credentials in the task worktree. No in-repo init: `AGIT_STORE=home npx agit start TASK --sandbox`. `agit finish` still pushes with host credentials from the main checkout. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. Cursor can still read `~/.ssh`; `GH_TOKEN` in your shell is for finish, not for the agent worktree.
 
 `finish` never force-pushes. On conflict or rewritten history, it stops.
 
@@ -144,6 +144,7 @@ agit doctor             # confirm what is actually active
 agit init [--mode remote|protocol|patch] [--sandbox] [--store repo|home]
                             Prepare this repository (default: remote, repo store)
 agit start <task-id>        Create or resume a task worktree
+agit start --sandbox        Enable agent sandboxes without re-running init
 agit start --title --body --issue
                             Store PR title, body, and a GitHub issue
 agit commit -m "..."        Local commit, never a push

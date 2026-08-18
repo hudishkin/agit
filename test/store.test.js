@@ -8,7 +8,7 @@ import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { statusCommand } from "../src/commands/status.js";
 import { NotInitialized } from "../src/errors.js";
-import { agitHome, projectId, resolveStore } from "../src/store.js";
+import { agitHome, loadStoreProfile, projectId, resolveStore } from "../src/store.js";
 import { loadTask } from "../src/taskstore.js";
 import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
 
@@ -108,6 +108,23 @@ describe("home store", () => {
     const store = await resolveStore(work);
     assert.equal(store.kind, "home");
     assert.equal(existsSync(join(store.dir, "profile.yml")), true);
+  });
+
+  test("AGIT_STORE=home start --sandbox without init", async () => {
+    isolateHome();
+    process.env.AGIT_STORE = "home";
+    const { work } = repo();
+
+    const started = await startCommand(work, "AUTH-123", { sandbox: true });
+    assert.equal(started.sandbox, "agents");
+    assert.equal(existsSync(join(work, ".agit")), false);
+    assert.equal(existsSync(join(started.path, ".cursor/sandbox.json")), true);
+    assert.equal(existsSync(join(started.path, ".claude/settings.json")), true);
+    assert.equal(existsSync(join(started.path, ".codex/config.toml")), true);
+
+    const store = await resolveStore(work);
+    assert.equal(store.kind, "home");
+    assert.equal(loadStoreProfile(store).workflow.sandbox, "agents");
   });
 
   test("in-repo profile wins over AGIT_STORE=home", async () => {

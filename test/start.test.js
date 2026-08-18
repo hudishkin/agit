@@ -233,4 +233,16 @@ describe("start", () => {
     assert.equal(gitRun(work, ["remote", "get-url", "origin"]).trim(), origin);
     assert.equal(isMirrorUrl(work, origin), false);
   });
+
+  test("start --sandbox enables agents without init --sandbox", async () => {
+    const created = await readyRepo();
+    const result = await startCommand(created.work, "AUTH-123", { sandbox: true });
+
+    assert.equal(result.sandbox, "agents");
+    assert.equal(loadProfile(created.work).workflow.sandbox, "agents");
+    assert.equal(existsSync(join(result.path, ".cursor/sandbox.json")), true);
+    assert.equal(existsSync(join(result.path, ".claude/settings.json")), true);
+    assert.equal(existsSync(join(result.path, ".codex/config.toml")), true);
+    assert.equal(isMirrorUrl(created.work, gitRun(created.work, ["remote", "get-url", "origin"]).trim()), true);
+  });
 });

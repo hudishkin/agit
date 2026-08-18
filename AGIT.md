@@ -17,10 +17,16 @@ Prefer the home store so the repository working tree stays clean (no `.agit/` in
 AGIT_STORE=home npx agit start <task-id>
 ```
 
-One-time setup, still without writing into the repo:
+Enable Cursor / Claude Code / Codex sandboxes without `init` (needs an origin remote):
 
 ```bash
-npx agit init --yes --store home
+AGIT_STORE=home npx agit start <task-id> --sandbox
+```
+
+That writes `workflow.sandbox: agents` into the home profile, so later starts keep sandbox on. One-time setup, still without writing into the repo:
+
+```bash
+npx agit init --yes --store home --sandbox
 ```
 
 Or set `store: home` in `~/.agit/config.yml`. Override the parent directory with `AGIT_HOME`.
@@ -43,6 +49,7 @@ npx agit finish <task-id>
 | You want to | Run |
 | --- | --- |
 | start a task | `npx agit start <task-id>` |
+| start with agent sandbox | `AGIT_STORE=home npx agit start <task-id> --sandbox` |
 | see where you are | `npx agit status` / `npx agit status --all` |
 | drop an unpublished task | `npx agit abort <task-id>` |
 
