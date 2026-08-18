@@ -4,6 +4,7 @@ import yaml from "js-yaml";
 import { PROFILE_FILE } from "./paths.js";
 
 export const ENFORCEMENT_MODES = ["remote", "protocol", "patch"];
+export const SANDBOX_MODES = ["off", "agents"];
 
 export function normalizeEnforcement(value) {
   return ENFORCEMENT_MODES.includes(value) ? value : "protocol";
@@ -11,6 +12,20 @@ export function normalizeEnforcement(value) {
 
 export function enforcementOf(profile) {
   return normalizeEnforcement(profile?.workflow?.enforcement);
+}
+
+export function normalizeSandbox(value) {
+  if (value === true || value === "agents") {
+    return "agents";
+  }
+  if (value === false || value === "off" || value == null) {
+    return "off";
+  }
+  return SANDBOX_MODES.includes(value) ? value : "off";
+}
+
+export function sandboxOf(profile) {
+  return normalizeSandbox(profile?.workflow?.sandbox);
 }
 
 export const DEFAULT_PROFILE = {
@@ -28,6 +43,8 @@ export const DEFAULT_PROFILE = {
     prune_after_days: 14,
     // Missing key in an existing profile.yml also loads as protocol.
     enforcement: "protocol",
+    // Missing key loads as off: sandbox is opt-in.
+    sandbox: "off",
   },
   checks: [],
   checks_timeout_sec: 900,

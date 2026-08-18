@@ -18,6 +18,7 @@ import {
   loadProfile,
   normalizeEnforcement,
   profileExists,
+  sandboxOf,
   saveProfile,
 } from "../profile.js";
 import {
@@ -98,6 +99,12 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
         ? current.workflow.enforcement
         : "remote";
 
+  const sandbox = options.sandbox
+    ? "agents"
+    : existed
+      ? sandboxOf(current)
+      : "off";
+
   const profile = {
     ...current,
     repo: {
@@ -108,6 +115,7 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     workflow: {
       ...current.workflow,
       enforcement,
+      sandbox,
     },
     checks,
     pr: {
@@ -167,6 +175,7 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     gitignore: gitignore.added,
     default_branch: profile.repo.default_branch,
     enforcement,
+    sandbox,
     checks: profile.checks,
     install,
     hooks: Boolean(hook),
@@ -180,7 +189,9 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
         ? `Initialized agit in ${store.dir}. The repository working tree was not changed.`
         : "Initialized agit.",
       hook?.backup ? `Backed up your previous pre-push hook to ${hook.backup}` : null,
-      "Next: agit protect (server-side rules), agit isolate (local mirror), then agit start <task-id>",
+      sandbox === "agents"
+        ? "workflow.sandbox is agents: run agit isolate, then agit start to write agent sandbox configs."
+        : "Next: agit protect (server-side rules), agit isolate (local mirror), then agit start <task-id>",
     ]
       .filter(Boolean)
       .join("\n"),

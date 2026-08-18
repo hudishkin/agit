@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { abortCommand } from "../src/commands/abort.js";
 import { doctorCommand } from "../src/commands/doctor.js";
 import { initCommand } from "../src/commands/init.js";
+import { isolateCommand } from "../src/commands/isolate.js";
 import { startCommand } from "../src/commands/start.js";
 import { hookPath } from "../src/hooks.js";
 import { loadProfile, saveProfile } from "../src/profile.js";
@@ -54,6 +55,8 @@ describe("doctor", () => {
     assert.equal(result.checks.find((check) => check.id === "stale_tasks").status, "ok");
     assert.equal(result.checks.find((check) => check.id === "pr_provider").status, "ok");
     assert.match(result.checks.find((check) => check.id === "pr_provider").message, /github/);
+    assert.equal(result.checks.find((check) => check.id === "sandbox_mode").status, "ok");
+    assert.match(result.checks.find((check) => check.id === "sandbox_mode").message, /off/);
   });
 
   test("does not require gh when pr.provider is none", async () => {
@@ -122,5 +125,38 @@ describe("doctor", () => {
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, true);
     assert.ok(Array.isArray(payload.data.checks));
+  });
+
+  test("sandbox=agents without isolate fails doctor", async () => {
+    const created = createGitRepo();
+    repos.push(created);
+    await initCommand(created.work, { yes: true, install: false, sandbox: true });
+
+    const result = await doctorCommand(created.work);
+    assert.equal(result.ok, false);
+    assert.equal(result.checks.find((check) => check.id === "sandbox_mode").status, "ok");
+    assert.equal(result.checks.find((check) => check.id === "sandbox_isolate").status, "fail");
+  });
+
+  test("sandbox=agents with isolate and start reports the worktree configs", async () => {
+    const created = createGitRepo();
+    repos.push(created);
+    await initCommand(created.work, { yes: true, install: false, sandbox: true });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+    await isolateCommand(created.work);
+    await startCommand(created.work, "AUTH-123");
+
+    const result = await doctorCommand(created.work);
+    assert.equal(result.checks.find((check) => check.id === "sandbox_mode").status, "ok");
+    assert.equal(result.checks.find((check) => check.id === "sandbox_isolate").status, "ok");
+    assert.equal(result.checks.find((check) => check.id === "sandbox_runtime").status, "ok");
+    const configFail = result.checks.find(
+      (check) =>
+        check.layer === "sandbox" &&
+        check.status === "fail" &&
+        /sandbox\.json|settings\.json|config\.toml|insecure_none|danger-full-access/.test(check.message),
+    );
+    assert.equal(configFail, undefined);
   });
 });

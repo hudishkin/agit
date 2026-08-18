@@ -72,6 +72,7 @@ export function createProgram() {
       .option("--checks <command>", "Check to run before finish", (value, previous) => [...previous, value], [])
       .option("--mode <mode>", "Enforcement: remote (default), protocol, or patch")
       .option("--guard-only", "Remote enforcement; local git stays allowed")
+      .option("--sandbox", "Write Cursor, Claude Code, and Codex sandbox configs on start")
       .option("--store <store>", "repo (default) or home (~/.agit/<project>)")
       .option("--no-install", "Do not add agit as a devDependency")
       .option("--no-hooks", "Do not install the pre-push hook")

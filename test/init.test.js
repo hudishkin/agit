@@ -61,6 +61,7 @@ describe("init", () => {
     assert.equal(profile.repo.name, "backend");
     assert.equal(profile.repo.default_branch, "main");
     assert.equal(profile.workflow.enforcement, "remote");
+    assert.equal(profile.workflow.sandbox, "off");
     assert.equal(profile.pr.provider, "github");
     assert.deepEqual(profile.checks, ["npm test"]);
     assert.match(readFileSync(join(work, "AGENTS.md"), "utf8"), /Local Git is allowed/);
@@ -106,6 +107,27 @@ describe("init", () => {
     const { work } = repo();
 
     await assert.rejects(() => initCommand(work, { yes: true, install: false, mode: "sandbox" }), AgitError);
+  });
+
+  test("init --sandbox writes workflow.sandbox agents", async () => {
+    const { work } = repo();
+
+    const result = await initCommand(work, { yes: true, install: false, sandbox: true });
+
+    assert.equal(loadProfile(work).workflow.sandbox, "agents");
+    assert.equal(result.sandbox, "agents");
+    assert.match(result.message, /workflow.sandbox is agents/);
+  });
+
+  test("re-init keeps sandbox off unless --sandbox is passed", async () => {
+    const { work } = repo();
+
+    await initCommand(work, { yes: true, install: false });
+    await initCommand(work, { yes: true, install: false });
+    assert.equal(loadProfile(work).workflow.sandbox, "off");
+
+    await initCommand(work, { yes: true, install: false, sandbox: true });
+    assert.equal(loadProfile(work).workflow.sandbox, "agents");
   });
 
   test("does not overwrite text outside AGENTS.md markers", async () => {

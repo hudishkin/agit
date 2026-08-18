@@ -128,19 +128,20 @@ Hooks are first-class for **Cursor** and **Claude Code**. Other agents can still
 2. **Agent guards** — Cursor `beforeShellExecution` and Claude Code `PreToolUse` call `agit guard`. In the default workflow, direct publishing is discouraged. In `protocol`, git mutations are redirected to agit.
 3. **pre-push hook** — a raw `git push` fails unless `agit finish` issued a one-use token. Works alongside husky.
 4. **Local mirror (optional)** — `agit isolate` points this clone's `origin` at `.agit/mirror.git`. Everyday `git push` stays local. Undo with `agit isolate --undo`.
+5. **Agent OS sandbox (opt-in)** — `agit init --sandbox` sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs in the task worktree. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. This still needs `agit isolate`; it does not hide `~/.ssh` or `GH_TOKEN`.
 
 `finish` never force-pushes. On conflict or rewritten history, it stops.
 
 ```bash
 agit protect --apply    # GitHub ruleset; needs admin
-agit isolate            # optional; this clone only
+agit isolate            # optional unless workflow.sandbox is agents
 agit doctor             # confirm what is actually active
 ```
 
 ## Commands
 
 ```text
-agit init [--mode remote|protocol|patch] [--store repo|home]
+agit init [--mode remote|protocol|patch] [--sandbox] [--store repo|home]
                             Prepare this repository (default: remote, repo store)
 agit start <task-id>        Create or resume a task worktree
 agit start --title --body --issue
@@ -174,6 +175,7 @@ Every command accepts `--json`.
 ```yaml
 workflow:
   enforcement: remote     # new init default. protocol = agit CLI workflow
+  sandbox: off            # agents = write Cursor/Claude/Codex sandbox configs on start
 
 pr:
   provider: github        # github | gitlab | none
@@ -194,7 +196,7 @@ commit:
 
 `init --yes` without `--checks` looks at the repo (`package.json` scripts.test, pytest, cargo, go) and writes what it finds. Existing non-empty `checks` are left alone.
 
-Existing profiles without `enforcement` stay on `protocol`. Existing profiles without `pr.provider` stay on `github`. `init` writes `gitlab` when the remote URL looks like GitLab. Isolation lives in this clone's git config, not in the profile.
+Existing profiles without `enforcement` stay on `protocol`. Existing profiles without `sandbox` stay `off`. Existing profiles without `pr.provider` stay on `github`. `init` writes `gitlab` when the remote URL looks like GitLab. Isolation lives in this clone's git config, not in the profile. `init --sandbox` is a flag, not `--mode sandbox`.
 
 These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `allow_direct_push`, `allow_force_push`. Review-loop pushes after the first `finish` are allowed.
 
@@ -235,11 +237,11 @@ New clones default to **remote**: the agent works with local git; a human runs `
 
 ## Threat model
 
-Agit is a workflow boundary, not a sandbox.
+Agit is a workflow boundary. `init --sandbox` additionally configures vendor OS sandboxes (Cursor, Claude Code, Codex) and `doctor` fails if that runtime or those configs are missing.
 
 **Designed for** accidental direct publishing, workflow drift, premature pushes, the wrong task or branch, and parallel-agent Git state conflicts.
 
-**Not designed for** hostile processes, credential theft, unrestricted network attacks, or a compromised machine.
+**Not designed for** hostile processes, credential theft, unrestricted network attacks, or a compromised machine. Agent sandboxes do not hide `~/.ssh` or host `GH_TOKEN`; that is a later layer.
 
 Not a merge queue. Not a replacement for GitHub rulesets.
 

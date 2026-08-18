@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -202,5 +202,27 @@ describe("start", () => {
     assert.equal(payload.ok, true);
     assert.equal(payload.data.branch, "agit/AUTH-123");
     assert.equal(payload.data.path, taskWork(work, "AUTH-123"));
+  });
+
+  test("start with sandbox=agents writes agent configs in the worktree", async () => {
+    const created = repo();
+    await initCommand(created.work, { yes: true, install: false, sandbox: true });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+
+    const result = await startCommand(created.work, "AUTH-123");
+    assert.equal(result.sandbox, "agents");
+    assert.equal(existsSync(join(result.path, ".cursor/sandbox.json")), true);
+    assert.equal(existsSync(join(result.path, ".claude/settings.json")), true);
+    assert.equal(existsSync(join(result.path, ".codex/config.toml")), true);
+    assert.match(result.message, /Agent sandbox configs written/);
+  });
+
+  test("start without sandbox does not write agent sandbox configs", async () => {
+    const { work } = await readyRepo();
+    const result = await startCommand(work, "AUTH-123");
+    assert.equal(result.sandbox, undefined);
+    assert.equal(existsSync(join(result.path, ".cursor/sandbox.json")), false);
+    assert.equal(existsSync(join(result.path, ".codex/config.toml")), false);
   });
 });
