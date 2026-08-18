@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readLogTail, runChecks } from "../checks.js";
 import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError, WrongBranch } from "../errors.js";
-import { openerFor, providerOf } from "../prhost.js";
+import { inspectMergeRequest, openerFor, providerOf } from "../prhost.js";
+import { doneHint } from "./done.js";
 import {
   commitSubject,
   currentBranch,
@@ -82,7 +83,7 @@ async function rebaseOntoDefault(tree, profile, task) {
   return true;
 }
 
-export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = {}) {
+export async function finishCommand(cwd, taskId, { createPr, squash, rebase, inspectPr: inspect = inspectMergeRequest } = {}) {
   assertTaskId(taskId);
 
   const { store, profile, root } = await loadWorkspace(cwd);
@@ -125,13 +126,29 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase } = 
       throw new WrongBranch(`Current branch ${branch} does not match task ${taskId}.`);
     }
 
+    const existingPr = task.publish?.pr_url ?? null;
+    if (existingPr) {
+      const pr = await inspect(root, existingPr);
+      if (pr?.merged) {
+        return {
+          task_id: taskId,
+          branch: task.branch,
+          pr_url: existingPr,
+          pushed: wasPushed,
+          already: true,
+          merged: true,
+          status: task.status,
+          message: `PR already merged:\n${existingPr}\n${doneHint(taskId)}`,
+        };
+      }
+    }
+
     if (!(await isClean(tree))) {
       throw new DirtyTree("Working tree is not clean.");
     }
 
     const head = await revParse(tree, "HEAD");
     const publishedSha = task.publish?.pushed_sha ?? null;
-    const existingPr = task.publish?.pr_url ?? null;
 
     if (wasPushed && existingPr && publishedSha === head) {
       return {

@@ -20,6 +20,8 @@ Do not run `agit finish`. A human publishes from their own terminal:
 agit finish <task-id>
 ```
 
+After the PR is merged, a human runs `agit done <task-id>` to remove the local worktree.
+
 If `agit` is not on PATH, use `npx agit`.
 
 This file is a hint. Tool-call guards block publish commands before the shell runs them.
