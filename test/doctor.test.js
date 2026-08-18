@@ -151,6 +151,8 @@ describe("doctor", () => {
     assert.equal(result.checks.find((check) => check.id === "sandbox_mode").status, "ok");
     assert.equal(result.checks.find((check) => check.id === "sandbox_isolate").status, "ok");
     assert.equal(result.checks.find((check) => check.id === "sandbox_runtime").status, "ok");
+    assert.equal(result.checks.find((check) => check.id === "sandbox_credentials").status, "ok");
+    assert.equal(result.checks.find((check) => check.id === "sandbox_host_pat").status, "ok");
     const configFail = result.checks.find(
       (check) =>
         check.layer === "sandbox" &&
@@ -158,5 +160,18 @@ describe("doctor", () => {
         /sandbox\.json|settings\.json|config\.toml|insecure_none|danger-full-access/.test(check.message),
     );
     assert.equal(configFail, undefined);
+  });
+
+  test("sandbox start isolates without a prior agit isolate", async () => {
+    const created = createGitRepo();
+    repos.push(created);
+    await initCommand(created.work, { yes: true, install: false, sandbox: true });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+    await startCommand(created.work, "AUTH-123");
+
+    const result = await doctorCommand(created.work);
+    assert.equal(result.checks.find((check) => check.id === "sandbox_isolate").status, "ok");
+    assert.equal(result.checks.find((check) => check.id === "sandbox_credentials").status, "ok");
   });
 });

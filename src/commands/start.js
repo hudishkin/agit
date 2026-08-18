@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DirtyTree, TaskStateError } from "../errors.js";
+import { ensureGitignore } from "../gitignore.js";
 import {
   addWorktree,
   branchExists,
@@ -13,16 +14,19 @@ import {
   revParse,
 } from "../git.js";
 import { withTaskLock } from "../lock.js";
-import { isolationEnabled, syncMirror } from "../mirror.js";
+import { enableIsolation, inspectIsolation, syncMirror } from "../mirror.js";
 import { enforcementOf, sandboxOf } from "../profile.js";
 import { resolveTaskTree, worktreeAbsPath, worktreeRelPath } from "../root.js";
-import { applySandbox } from "../sandbox.js";
-import { loadWorkspace } from "../store.js";
+import { applySandbox, lockWorktreeCredentials } from "../sandbox.js";
+import { loadWorkspace, saveStoreProfile } from "../store.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
 
 function nextHint(taskId, enforcement, path, sandbox = "off") {
   const work = path ? `Work in: ${path}` : null;
-  const sandboxLine = sandbox === "agents" ? "Agent sandbox configs written in this worktree." : null;
+  const sandboxLine =
+    sandbox === "agents"
+      ? "Agent sandbox configs written. Origin is the local mirror. Worktree git credentials are locked."
+      : null;
   if (enforcement === "remote") {
     return [
       `Task started: ${taskId}`,
@@ -49,15 +53,15 @@ function nextHint(taskId, enforcement, path, sandbox = "off") {
     .join("\n");
 }
 
-function withSandbox(result, profile) {
+async function withSandbox(result, profile) {
   const files = applySandbox(result.path, profile);
-  const sandbox = sandboxOf(profile);
-  if (files.length === 0) {
+  if (sandboxOf(profile) !== "agents") {
     return result;
   }
+  await lockWorktreeCredentials(result.path);
   return {
     ...result,
-    sandbox,
+    sandbox: "agents",
     sandbox_files: files,
   };
 }
@@ -144,17 +148,45 @@ function applyMetadata(task, { title, body, issue } = {}) {
   return task;
 }
 
+function enableRequestedSandbox(store, profile, requested) {
+  if (!requested || sandboxOf(profile) === "agents") {
+    return profile;
+  }
+  const next = {
+    ...profile,
+    workflow: { ...profile.workflow, sandbox: "agents" },
+  };
+  saveStoreProfile(store, next);
+  return next;
+}
+
 export async function startCommand(cwd, taskId, metadata = {}) {
   assertTaskId(taskId);
 
-  const { store, profile, root } = await loadWorkspace(cwd);
+  const { store, profile: loaded, root } = await loadWorkspace(cwd);
+  let profile = loaded;
+  const requestedSandbox = Boolean(metadata.sandbox);
+  const sandbox = requestedSandbox || sandboxOf(profile) === "agents";
   const state = store.dir;
   const branch = `${profile.workflow.branch_prefix}${taskId}`;
   const base = profile.repo.default_branch ?? (await defaultBranch(cwd));
   const url = await remoteUrl(cwd);
-  const isolated = await isolationEnabled(cwd);
+  let isolated = (await inspectIsolation(cwd, profile)).isolated;
 
-  if (isolated) {
+  if (sandbox && !isolated) {
+    try {
+      await enableIsolation(cwd, profile);
+      if (store.kind === "repo") {
+        ensureGitignore(store.root);
+      }
+      isolated = true;
+    } catch (error) {
+      throw new TaskStateError(
+        error.message,
+        "sandbox=agents needs an origin remote so agit can isolate this clone.",
+      );
+    }
+  } else if (isolated) {
     await syncMirror(cwd, profile);
   } else if (url) {
     await fetch(cwd);
@@ -162,6 +194,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
 
   return withTaskLock(state, taskId, async () => {
     if (taskExists(state, taskId)) {
+      profile = enableRequestedSandbox(store, profile, requestedSandbox);
       const task = loadTask(state, taskId);
       const intended = worktreeAbsPath(store, taskId);
       if (!existsSync(intended) && !(await branchExists(root, task.branch))) {
@@ -176,7 +209,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
         task.commits = [];
         task.status = "started";
         saveTask(state, task);
-        return withSandbox(
+        return await withSandbox(
           {
             task_id: taskId,
             branch: task.branch,
@@ -204,7 +237,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
       applyMetadata(task, metadata);
       saveTask(state, task);
 
-      return withSandbox(
+      return await withSandbox(
         {
           task_id: taskId,
           branch: task.branch,
@@ -224,6 +257,8 @@ export async function startCommand(cwd, taskId, metadata = {}) {
         "Commit or stash those changes, or set workflow.require_clean_tree_on_start: false.",
       );
     }
+
+    profile = enableRequestedSandbox(store, profile, requestedSandbox);
 
     const { ref: startPoint, note } = await resolveStartPoint(root, base, Boolean(url), {
       preferOrigin: isolated,
@@ -250,7 +285,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
     );
     saveTask(state, task);
 
-    return withSandbox(
+    return await withSandbox(
       {
         task_id: taskId,
         branch,

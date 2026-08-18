@@ -19,6 +19,8 @@ import { loadWorkspace } from "../store.js";
 import {
   detectAgents,
   inspectAgentSandbox,
+  inspectHostPublishEnv,
+  inspectWorktreeCredentials,
   probeRuntime,
   sandboxRoots,
 } from "../sandbox.js";
@@ -389,20 +391,38 @@ async function checkSandboxLayer(checks, cwd, { store, profile, isolation }) {
   const runtime = await probeRuntime();
   add(checks, "sandbox", "sandbox_runtime", runtime.ok ? "ok" : "fail", runtime.message);
 
-  if (!isolation?.isolated) {
-    add(
-      checks,
-      "sandbox",
-      "sandbox_isolate",
-      "fail",
-      "sandbox=agents requires origin to be the local mirror. Run agit isolate",
-    );
-  } else {
-    add(checks, "sandbox", "sandbox_isolate", "ok", "origin is the local mirror");
-  }
+  add(checks, "sandbox", "sandbox_isolate", isolation?.isolated ? "ok" : "fail", isolation?.isolated
+    ? "origin is the local mirror"
+    : "sandbox=agents requires origin to be the local mirror. agit start enables it; or run agit isolate");
+
+  const hostPat = inspectHostPublishEnv();
+  add(checks, "sandbox", hostPat.id, hostPat.status, hostPat.message);
 
   const agents = await detectAgents();
   const present = Object.entries(agents).filter(([, onPath]) => onPath);
+  const roots = sandboxRoots(store, cwd);
+
+  if (roots.length === 0) {
+    add(
+      checks,
+      "sandbox",
+      "sandbox_config",
+      "warn",
+      "No task worktree yet. agit start writes sandbox configs, isolates origin, and locks git credentials",
+    );
+    return;
+  }
+
+  const credResults = await Promise.all(roots.map((root) => inspectWorktreeCredentials(root)));
+  const credFail = credResults.find((result) => result.status === "fail");
+  add(
+    checks,
+    "sandbox",
+    "sandbox_credentials",
+    credFail ? "fail" : "ok",
+    credFail?.message ?? "Task worktrees have git credentials locked. agit finish pushes from the main checkout",
+  );
+
   if (present.length === 0) {
     add(
       checks,
@@ -410,18 +430,6 @@ async function checkSandboxLayer(checks, cwd, { store, profile, isolation }) {
       "sandbox_agents",
       "warn",
       "No Cursor, Claude Code, or Codex on PATH. agit start still writes sandbox configs",
-    );
-    return;
-  }
-
-  const roots = sandboxRoots(store, cwd);
-  if (roots.length === 0) {
-    add(
-      checks,
-      "sandbox",
-      "sandbox_config",
-      "warn",
-      "No task worktree yet. agit start writes Cursor, Claude Code, and Codex sandbox configs",
     );
     return;
   }

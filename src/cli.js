@@ -90,12 +90,14 @@ export function createProgram() {
       .option("--title <title>", "Title stored for the draft PR")
       .option("--body <body>", "Body stored for the draft PR")
       .option("--issue <number>", "GitHub issue to close from the draft PR")
+      .option("--sandbox", "Enable agent sandboxes without re-running init")
       .action(async (taskId, opts, command) => {
         await runCommand("start", command, () =>
           startCommand(cwdFrom(command), taskId, {
             title: opts.title,
             body: opts.body,
             issue: opts.issue,
+            sandbox: Boolean(opts.sandbox),
           }),
         );
       }),

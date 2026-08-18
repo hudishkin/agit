@@ -17,10 +17,18 @@ Prefer the home store so the repository working tree stays clean (no `.agit/` in
 AGIT_STORE=home npx agit start <task-id>
 ```
 
-One-time setup, still without writing into the repo:
+Before the first `start`, if sandbox has not already been chosen, ask the user whether to enable Cursor / Claude Code / Codex sandboxes. Do not add `--sandbox` unless they say yes. Skip the question when the user already said yes or no in this conversation, or when the profile has `workflow.sandbox: agents`.
+
+If they say yes (needs an origin remote):
 
 ```bash
-npx agit init --yes --store home
+AGIT_STORE=home npx agit start <task-id> --sandbox
+```
+
+That writes `workflow.sandbox: agents` into the home profile, so later starts keep sandbox on. One-time setup, still without writing into the repo:
+
+```bash
+npx agit init --yes --store home --sandbox
 ```
 
 Or set `store: home` in `~/.agit/config.yml`. Override the parent directory with `AGIT_HOME`.
@@ -28,7 +36,7 @@ If `.agit/profile.yml` exists in the repo, use that store instead.
 
 ## Workflow
 
-1. `npx agit start <task-id>`
+1. If sandbox is undecided, ask. Then `npx agit start <task-id>` (add `--sandbox` only if they said yes).
 2. Work only in the path `start` printed. Do not run `git worktree`.
 3. Local Git is allowed: commit, branch, `status`, `diff`, `log`.
 4. Do not push. Do not create or merge pull requests. Do not pass `--no-verify`.
@@ -43,6 +51,7 @@ npx agit finish <task-id>
 | You want to | Run |
 | --- | --- |
 | start a task | `npx agit start <task-id>` |
+| start with agent sandbox | `AGIT_STORE=home npx agit start <task-id> --sandbox` |
 | see where you are | `npx agit status` / `npx agit status --all` |
 | drop an unpublished task | `npx agit abort <task-id>` |
 

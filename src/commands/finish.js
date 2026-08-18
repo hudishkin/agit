@@ -232,7 +232,7 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase, ins
 
       try {
         const target = isolated ? await publishUrl(cwd, profile) : undefined;
-        await push(tree, task.branch, { allow: true, url: target });
+        await push(root, task.branch, { allow: true, url: target });
         if (isolated) {
           await updateMirrorBranch(root, task.branch, await revParse(tree, "HEAD"));
         }
