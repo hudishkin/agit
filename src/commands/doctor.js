@@ -14,8 +14,14 @@ import { hookPath, hooksInstalled, installHooks } from "../hooks.js";
 import { inspectIsolation } from "../mirror.js";
 import { listPruneCandidates, staleHint } from "../prune.js";
 import { providerOf } from "../prhost.js";
-import { enforcementOf } from "../profile.js";
+import { enforcementOf, sandboxOf } from "../profile.js";
 import { loadWorkspace } from "../store.js";
+import {
+  detectAgents,
+  inspectAgentSandbox,
+  probeRuntime,
+  sandboxRoots,
+} from "../sandbox.js";
 import { installAgentGuardsCommand } from "./guards.js";
 
 const execFileAsync = promisify(execFile);
@@ -26,6 +32,7 @@ export const LAYERS = {
   agent: "Layer 2: agent tool-call guards (block the command before the shell)",
   git: "Layer 3: git pre-push hook (guardrail, bypassable with --no-verify)",
   credential: "Layer 4: push credential boundary",
+  sandbox: "Layer 5: agent OS sandbox",
 };
 
 async function hasCommand(name) {
@@ -160,7 +167,7 @@ async function checkEnvironment(checks, cwd) {
     }
   }
 
-  return { repo, profile };
+  return { repo, profile, store };
 }
 
 async function checkServerLayer(checks, profile) {
@@ -361,9 +368,80 @@ async function checkGitLayer(checks, cwd, profile) {
   add(checks, "git", "pre_push_hook", "ok", `pre-push hook is active at ${path}`);
 }
 
+async function checkSandboxLayer(checks, cwd, { store, profile, isolation }) {
+  if (!profile) {
+    return;
+  }
+  const mode = sandboxOf(profile);
+  if (mode !== "agents") {
+    add(
+      checks,
+      "sandbox",
+      "sandbox_mode",
+      "ok",
+      "workflow.sandbox is off. Agent OS sandbox is not required",
+    );
+    return;
+  }
+
+  add(checks, "sandbox", "sandbox_mode", "ok", "workflow.sandbox is agents");
+
+  const runtime = await probeRuntime();
+  add(checks, "sandbox", "sandbox_runtime", runtime.ok ? "ok" : "fail", runtime.message);
+
+  if (!isolation?.isolated) {
+    add(
+      checks,
+      "sandbox",
+      "sandbox_isolate",
+      "fail",
+      "sandbox=agents requires origin to be the local mirror. Run agit isolate",
+    );
+  } else {
+    add(checks, "sandbox", "sandbox_isolate", "ok", "origin is the local mirror");
+  }
+
+  const agents = await detectAgents();
+  const present = Object.entries(agents).filter(([, onPath]) => onPath);
+  if (present.length === 0) {
+    add(
+      checks,
+      "sandbox",
+      "sandbox_agents",
+      "warn",
+      "No Cursor, Claude Code, or Codex on PATH. agit start still writes sandbox configs",
+    );
+    return;
+  }
+
+  const roots = sandboxRoots(store, cwd);
+  if (roots.length === 0) {
+    add(
+      checks,
+      "sandbox",
+      "sandbox_config",
+      "warn",
+      "No task worktree yet. agit start writes Cursor, Claude Code, and Codex sandbox configs",
+    );
+    return;
+  }
+
+  for (const [agent] of present) {
+    const results = roots.map((root) => inspectAgentSandbox(root, agent));
+    const failed = results.find((result) => result.status === "fail");
+    add(
+      checks,
+      "sandbox",
+      failed?.id ?? `${agent}_sandbox`,
+      failed ? "fail" : "ok",
+      failed ? `${failed.message} (${agent})` : `${agent} sandbox config is fail-closed in the task worktree`,
+    );
+  }
+}
+
 export async function doctorCommand(cwd, { fix = false } = {}) {
   const checks = [];
-  const { repo, profile } = await checkEnvironment(checks, cwd);
+  const { repo, profile, store } = await checkEnvironment(checks, cwd);
 
   let fixed = null;
   if (fix) {
@@ -428,6 +506,7 @@ export async function doctorCommand(cwd, { fix = false } = {}) {
         "origin still points at the real remote. git push origin uses your credential. Run agit isolate",
       );
     }
+    await checkSandboxLayer(checks, cwd, { store, profile, isolation });
   }
 
   const failed = checks.some((check) => check.status === "fail");

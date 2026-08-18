@@ -14,17 +14,20 @@ import {
 } from "../git.js";
 import { withTaskLock } from "../lock.js";
 import { isolationEnabled, syncMirror } from "../mirror.js";
-import { enforcementOf } from "../profile.js";
+import { enforcementOf, sandboxOf } from "../profile.js";
 import { resolveTaskTree, worktreeAbsPath, worktreeRelPath } from "../root.js";
+import { applySandbox } from "../sandbox.js";
 import { loadWorkspace } from "../store.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
 
-function nextHint(taskId, enforcement, path) {
+function nextHint(taskId, enforcement, path, sandbox = "off") {
   const work = path ? `Work in: ${path}` : null;
+  const sandboxLine = sandbox === "agents" ? "Agent sandbox configs written in this worktree." : null;
   if (enforcement === "remote") {
     return [
       `Task started: ${taskId}`,
       work,
+      sandboxLine,
       `Work with local git. Do not push.`,
       `A human publishes with:`,
       `  agit finish ${taskId}`,
@@ -36,6 +39,7 @@ function nextHint(taskId, enforcement, path) {
   return [
     `Task started: ${taskId}`,
     work,
+    sandboxLine,
     `Work normally, but do not use git push directly.`,
     `When ready, run:`,
     `  agit commit -m "${taskId}: <summary>"`,
@@ -43,6 +47,19 @@ function nextHint(taskId, enforcement, path) {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function withSandbox(result, profile) {
+  const files = applySandbox(result.path, profile);
+  const sandbox = sandboxOf(profile);
+  if (files.length === 0) {
+    return result;
+  }
+  return {
+    ...result,
+    sandbox,
+    sandbox_files: files,
+  };
 }
 
 // Prefer origin so a task never starts from a stale local base, but never drop
@@ -159,17 +176,20 @@ export async function startCommand(cwd, taskId, metadata = {}) {
         task.commits = [];
         task.status = "started";
         saveTask(state, task);
-        return {
-          task_id: taskId,
-          branch: task.branch,
-          base: startPoint,
-          path: intended,
-          resumed: true,
-          status: task.status,
-          message: [`Restarted aborted task ${taskId} on ${task.branch}.`, note, nextHint(taskId, enforcementOf(profile), intended)]
-            .filter(Boolean)
-            .join("\n"),
-        };
+        return withSandbox(
+          {
+            task_id: taskId,
+            branch: task.branch,
+            base: startPoint,
+            path: intended,
+            resumed: true,
+            status: task.status,
+            message: [`Restarted aborted task ${taskId} on ${task.branch}.`, note, nextHint(taskId, enforcementOf(profile), intended, sandboxOf(profile))]
+              .filter(Boolean)
+              .join("\n"),
+          },
+          profile,
+        );
       }
 
       const path = await ensureTaskWorktree(store, { ...task, worktree: task.worktree ?? worktreeRelPath(taskId, store) });
@@ -184,15 +204,18 @@ export async function startCommand(cwd, taskId, metadata = {}) {
       applyMetadata(task, metadata);
       saveTask(state, task);
 
-      return {
-        task_id: taskId,
-        branch: task.branch,
-        base: task.base_ref,
-        path,
-        resumed: true,
-        status: task.status,
-        message: `${wasAborted ? "Restarted aborted" : "Resumed"} task ${taskId} on ${task.branch}.\n${nextHint(taskId, enforcementOf(profile), path)}`,
-      };
+      return withSandbox(
+        {
+          task_id: taskId,
+          branch: task.branch,
+          base: task.base_ref,
+          path,
+          resumed: true,
+          status: task.status,
+          message: `${wasAborted ? "Restarted aborted" : "Resumed"} task ${taskId} on ${task.branch}.\n${nextHint(taskId, enforcementOf(profile), path, sandboxOf(profile))}`,
+        },
+        profile,
+      );
     }
 
     if (profile.workflow.require_clean_tree_on_start && !(await isClean(root))) {
@@ -227,14 +250,17 @@ export async function startCommand(cwd, taskId, metadata = {}) {
     );
     saveTask(state, task);
 
-    return {
-      task_id: taskId,
-      branch,
-      base: startPoint,
-      path,
-      resumed: false,
-      status: "started",
-      message: [note, nextHint(taskId, enforcementOf(profile), path)].filter(Boolean).join("\n"),
-    };
+    return withSandbox(
+      {
+        task_id: taskId,
+        branch,
+        base: startPoint,
+        path,
+        resumed: false,
+        status: "started",
+        message: [note, nextHint(taskId, enforcementOf(profile), path, sandboxOf(profile))].filter(Boolean).join("\n"),
+      },
+      profile,
+    );
   });
 }

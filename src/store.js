@@ -196,6 +196,7 @@ export async function detectedProfile(cwd, overrides = {}) {
     workflow: {
       ...current.workflow,
       enforcement,
+      sandbox: overrides.sandbox ?? current.workflow.sandbox ?? "off",
     },
     checks,
     pr: {
