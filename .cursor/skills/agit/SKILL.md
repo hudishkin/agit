@@ -17,7 +17,9 @@ Prefer the home store so the repository working tree stays clean (no `.agit/` in
 AGIT_STORE=home npx agit start <task-id>
 ```
 
-Enable Cursor / Claude Code / Codex sandboxes without `init` (needs an origin remote):
+Before the first `start`, if sandbox has not already been chosen, ask the user whether to enable Cursor / Claude Code / Codex sandboxes. Do not add `--sandbox` unless they say yes. Skip the question when the user already said yes or no in this conversation, or when the profile has `workflow.sandbox: agents`.
+
+If they say yes (needs an origin remote):
 
 ```bash
 AGIT_STORE=home npx agit start <task-id> --sandbox
@@ -34,7 +36,7 @@ If `.agit/profile.yml` exists in the repo, use that store instead.
 
 ## Workflow
 
-1. `npx agit start <task-id>`
+1. If sandbox is undecided, ask. Then `npx agit start <task-id>` (add `--sandbox` only if they said yes).
 2. Work only in the path `start` printed. Do not run `git worktree`.
 3. Local Git is allowed: commit, branch, `status`, `diff`, `log`.
 4. Do not push. Do not create or merge pull requests. Do not pass `--no-verify`.
