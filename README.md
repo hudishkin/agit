@@ -128,13 +128,13 @@ Hooks are first-class for **Cursor** and **Claude Code**. Other agents can still
 2. **Agent guards** — Cursor `beforeShellExecution` and Claude Code `PreToolUse` call `agit guard`. In the default workflow, direct publishing is discouraged. In `protocol`, git mutations are redirected to agit.
 3. **pre-push hook** — a raw `git push` fails unless `agit finish` issued a one-use token. Works alongside husky.
 4. **Local mirror (optional)** — `agit isolate` points this clone's `origin` at `.agit/mirror.git`. Everyday `git push` stays local. Undo with `agit isolate --undo`.
-5. **Agent OS sandbox (opt-in)** — `agit init --sandbox` sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs in the task worktree. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. This still needs `agit isolate`; it does not hide `~/.ssh` or `GH_TOKEN`.
+5. **Agent OS sandbox (opt-in)** — `agit init --sandbox` sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs, points origin at the local mirror, and locks git credentials in the task worktree. `agit finish` still pushes with host credentials from the main checkout. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. Cursor can still read `~/.ssh`; `GH_TOKEN` in your shell is for finish, not for the agent worktree.
 
 `finish` never force-pushes. On conflict or rewritten history, it stops.
 
 ```bash
 agit protect --apply    # GitHub ruleset; needs admin
-agit isolate            # optional unless workflow.sandbox is agents
+agit isolate            # optional; start does this when workflow.sandbox is agents
 agit doctor             # confirm what is actually active
 ```
 
@@ -241,7 +241,7 @@ Agit is a workflow boundary. `init --sandbox` additionally configures vendor OS 
 
 **Designed for** accidental direct publishing, workflow drift, premature pushes, the wrong task or branch, and parallel-agent Git state conflicts.
 
-**Not designed for** hostile processes, credential theft, unrestricted network attacks, or a compromised machine. Agent sandboxes do not hide `~/.ssh` or host `GH_TOKEN`; that is a later layer.
+**Not designed for** hostile processes, credential theft, unrestricted network attacks, or a compromised machine. Agent sandboxes do not hide `~/.ssh`. Host `GH_TOKEN` stays in your shell for `agit finish`; the task worktree cannot use it for git.
 
 Not a merge queue. Not a replacement for GitHub rulesets.
 

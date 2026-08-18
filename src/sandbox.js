@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { release as osRelease, platform as osPlatform } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { addWorktreeConfig, enableWorktreeConfig, getWorktreeConfig, setWorktreeConfig, unsetWorktreeConfig } from "./git.js";
 import { sandboxOf } from "./profile.js";
 import { resolveTaskTree } from "./root.js";
 import { listTaskIds, loadTask } from "./taskstore.js";
@@ -342,4 +343,51 @@ export function applySandbox(cwd, profile) {
     return [];
   }
   return writeAgentSandbox(cwd);
+}
+
+export const CREDENTIAL_LOCK_HELPER =
+  '!f() { echo "agit-credential-lock" >&2; exit 1; }; f';
+
+export const HOST_TOKEN_VARS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GLAB_TOKEN"];
+
+export async function lockWorktreeCredentials(cwd) {
+  await enableWorktreeConfig(cwd);
+  await unsetWorktreeConfig(cwd, "credential.helper");
+  await setWorktreeConfig(cwd, "credential.helper", "");
+  await addWorktreeConfig(cwd, "credential.helper", CREDENTIAL_LOCK_HELPER);
+}
+
+export async function inspectWorktreeCredentials(cwd) {
+  const raw = (await getWorktreeConfig(cwd, "credential.helper")) ?? "";
+  const helpers = raw.split("\n").map((line) => line.trim());
+  if (!helpers.some((helper) => helper.includes("agit-credential-lock"))) {
+    return {
+      id: "sandbox_credentials",
+      status: "fail",
+      message: "Worktree git credentials are not locked. agit start writes a fail-closed credential.helper",
+    };
+  }
+  if (helpers.some((helper) => /osxkeychain|gh auth|libsecret|manager|store/i.test(helper))) {
+    return {
+      id: "sandbox_credentials",
+      status: "fail",
+      message: "Worktree still has a host credential helper",
+    };
+  }
+  return {
+    id: "sandbox_credentials",
+    status: "ok",
+    message: "Worktree credential.helper is locked. git push from this tree cannot use the host PAT",
+  };
+}
+
+export function inspectHostPublishEnv(env = process.env) {
+  const present = HOST_TOKEN_VARS.filter((name) => Boolean(env[name]));
+  return {
+    id: "sandbox_host_pat",
+    status: "ok",
+    message: present.length
+      ? `${present.join(", ")} is in this process for agit finish. Task worktrees do not use it for git`
+      : "No GH_TOKEN in this process. agit finish uses host gh auth or git credentials, not the task worktree",
+  };
 }

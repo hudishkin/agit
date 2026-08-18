@@ -10,6 +10,7 @@ import {
   inspectClaudeSandbox,
   inspectCodexSandbox,
   inspectCursorSandbox,
+  inspectHostPublishEnv,
   writeAgentSandbox,
 } from "../src/sandbox.js";
 
@@ -88,5 +89,16 @@ describe("agent sandbox configs", () => {
     writeFileSync(join(cwd, CODEX_CONFIG_FILE), 'sandbox_mode = "danger-full-access"\nnetwork_access = true\n');
     writeAgentSandbox(cwd);
     assert.equal(inspectCodexSandbox(cwd).status, "ok");
+  });
+
+  test("inspectHostPublishEnv treats GH_TOKEN as finish-only", () => {
+    const withToken = inspectHostPublishEnv({ GH_TOKEN: "gho_test" });
+    assert.equal(withToken.status, "ok");
+    assert.match(withToken.message, /GH_TOKEN/);
+    assert.match(withToken.message, /finish/);
+
+    const without = inspectHostPublishEnv({});
+    assert.equal(without.status, "ok");
+    assert.match(without.message, /No GH_TOKEN/);
   });
 });

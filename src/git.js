@@ -67,6 +67,28 @@ export async function unsetConfig(cwd, key) {
   await runGit(cwd, ["config", "--unset", key], { allowFail: true });
 }
 
+export async function enableWorktreeConfig(cwd) {
+  await runGit(cwd, ["config", "extensions.worktreeConfig", "true"]);
+}
+
+export async function getWorktreeConfig(cwd, key) {
+  return runGit(cwd, ["config", "--worktree", "--get-all", key], { allowFail: true });
+}
+
+export async function setWorktreeConfig(cwd, key, value) {
+  await enableWorktreeConfig(cwd);
+  await runGit(cwd, ["config", "--worktree", key, value]);
+}
+
+export async function unsetWorktreeConfig(cwd, key) {
+  await runGit(cwd, ["config", "--worktree", "--unset-all", key], { allowFail: true });
+}
+
+export async function addWorktreeConfig(cwd, key, value) {
+  await enableWorktreeConfig(cwd);
+  await runGit(cwd, ["config", "--worktree", "--add", key, value]);
+}
+
 export async function currentBranch(cwd) {
   return runGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
 }
@@ -205,7 +227,7 @@ export async function push(cwd, branch, { allow = false, url } = {}) {
   }
 
   const tokenPath = await pushTokenPath(cwd);
-  const sha = await revParse(cwd, "HEAD");
+  const sha = await revParse(cwd, branch);
   writeFileSync(tokenPath, `${sha}\n`);
 
   try {

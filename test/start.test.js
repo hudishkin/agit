@@ -9,6 +9,8 @@ import { startCommand } from "../src/commands/start.js";
 import { DirtyTree, NotInitialized, TaskStateError } from "../src/errors.js";
 import { currentBranch } from "../src/git.js";
 import { acquireTaskLock } from "../src/lock.js";
+import { isMirrorUrl } from "../src/mirror.js";
+import { inspectWorktreeCredentials } from "../src/sandbox.js";
 import { loadProfile, saveProfile } from "../src/profile.js";
 import { loadTask } from "../src/taskstore.js";
 import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
@@ -215,14 +217,20 @@ describe("start", () => {
     assert.equal(existsSync(join(result.path, ".cursor/sandbox.json")), true);
     assert.equal(existsSync(join(result.path, ".claude/settings.json")), true);
     assert.equal(existsSync(join(result.path, ".codex/config.toml")), true);
-    assert.match(result.message, /Agent sandbox configs written/);
+    assert.equal(isMirrorUrl(created.work, gitRun(created.work, ["remote", "get-url", "origin"]).trim()), true);
+    assert.equal((await inspectWorktreeCredentials(result.path)).status, "ok");
+    assert.match(result.message, /local mirror/);
+    assert.match(result.message, /credentials are locked/);
   });
 
   test("start without sandbox does not write agent sandbox configs", async () => {
     const { work } = await readyRepo();
+    const origin = gitRun(work, ["remote", "get-url", "origin"]).trim();
     const result = await startCommand(work, "AUTH-123");
     assert.equal(result.sandbox, undefined);
     assert.equal(existsSync(join(result.path, ".cursor/sandbox.json")), false);
     assert.equal(existsSync(join(result.path, ".codex/config.toml")), false);
+    assert.equal(gitRun(work, ["remote", "get-url", "origin"]).trim(), origin);
+    assert.equal(isMirrorUrl(work, origin), false);
   });
 });
