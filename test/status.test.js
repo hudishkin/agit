@@ -6,6 +6,7 @@ import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { abortCommand } from "../src/commands/abort.js";
 import { commitCommand } from "../src/commands/commit.js";
+import { finishCommand } from "../src/commands/finish.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { statusCommand } from "../src/commands/status.js";
@@ -110,6 +111,42 @@ describe("status", () => {
     const aborted = result.tasks.find((task) => task.task_id === "OLD");
     assert.equal(aborted.worktree_exists, false);
     assert.match(result.message, /gone/);
+  });
+
+  test("status hints agit done when the PR is merged", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+    const tree = taskWork(work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+    await finishCommand(work, "AUTH-123", {
+      createPr: async () => "https://github.com/acme/backend/pull/1",
+    });
+
+    const result = await statusCommand(work, "AUTH-123", {
+      inspectPr: async () => ({ state: "MERGED", merged: true }),
+    });
+    assert.equal(result.merged, true);
+    assert.match(result.message, /agit done AUTH-123/);
+  });
+
+  test("status --all hints agit done for a merged PR", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+    const tree = taskWork(work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+    await finishCommand(work, "AUTH-123", {
+      createPr: async () => "https://github.com/acme/backend/pull/1",
+    });
+
+    const result = await statusCommand(work, undefined, {
+      all: true,
+      inspectPr: async () => ({ state: "MERGED", merged: true }),
+    });
+    assert.equal(result.stale_count, 1);
+    assert.match(result.message, /agit done AUTH-123/);
+    assert.doesNotMatch(result.message, /agit prune/);
   });
 
   test("status --all shows live commit count and last subject", async () => {

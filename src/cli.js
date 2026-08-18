@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { abortCommand } from "./commands/abort.js";
 import { commitCommand } from "./commands/commit.js";
+import { doneCommand } from "./commands/done.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { finishCommand } from "./commands/finish.js";
 import { guardCommand } from "./commands/guard.js";
@@ -147,6 +148,16 @@ export function createProgram() {
       .argument("<task-id>", "Task id, for example AUTH-123")
       .action(async (taskId, _opts, command) => {
         await runCommand("abort", command, () => abortCommand(cwdFrom(command), taskId));
+      }),
+  );
+
+  applyOutputOptions(
+    program
+      .command("done")
+      .description("Remove a local task worktree after its PR is merged")
+      .argument("<task-id>", "Task id, for example AUTH-123")
+      .action(async (taskId, _opts, command) => {
+        await runCommand("done", command, () => doneCommand(cwdFrom(command), taskId));
       }),
   );
 

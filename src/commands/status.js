@@ -1,10 +1,12 @@
 import { TaskStateError } from "../errors.js";
 import { currentBranch } from "../git.js";
+import { inspectMergeRequest } from "../prhost.js";
 import { listPruneCandidates, staleHint } from "../prune.js";
 import { loadWorkspace } from "../store.js";
 import { enrichTask } from "../taskinfo.js";
 import { listTaskIds, loadTask, taskExists } from "../taskstore.js";
 import { taskIdFromBranch } from "./commit.js";
+import { doneHint } from "./done.js";
 
 function formatTask(data) {
   const tree = !data.path
@@ -70,7 +72,20 @@ function formatTable(tasks) {
   return [header, ...rows].join("\n");
 }
 
-export async function statusCommand(cwd, taskId, { all = false } = {}) {
+function staleMessage(stale) {
+  const merged = stale.filter((item) => item.reason === "merged");
+  const other = stale.length - merged.length;
+  const lines = merged.map((item) => doneHint(item.task_id));
+  if (other > 0 || merged.length > 1) {
+    const prune = staleHint(stale.length);
+    if (prune) {
+      lines.push(prune);
+    }
+  }
+  return lines.length ? lines.join("\n") : null;
+}
+
+export async function statusCommand(cwd, taskId, { all = false, inspectPr: inspect = inspectMergeRequest } = {}) {
   const { store, profile, root } = await loadWorkspace(cwd);
   const state = store.dir;
 
@@ -79,8 +94,8 @@ export async function statusCommand(cwd, taskId, { all = false } = {}) {
     for (const id of listTaskIds(state)) {
       tasks.push(await enrichTask(store, loadTask(state, id), cwd));
     }
-    const stale = await listPruneCandidates(store, profile);
-    const hint = staleHint(stale.length);
+    const stale = await listPruneCandidates(store, profile, { inspectPr: inspect });
+    const hint = staleMessage(stale);
     const body =
       tasks.length === 0
         ? "No agit tasks."
@@ -108,9 +123,20 @@ export async function statusCommand(cwd, taskId, { all = false } = {}) {
   }
 
   const data = await enrichTask(store, loadTask(state, resolvedId), cwd);
+  let merged = false;
+  let message = formatTask(data);
+  if (data.pr_url) {
+    const pr = await inspect(root, data.pr_url);
+    merged = Boolean(pr?.merged);
+    if (merged) {
+      message = `${message}\n\n${doneHint(data.task_id)}`;
+    }
+  }
+
   return {
     ...data,
+    merged,
     store: { kind: store.kind, dir: store.dir },
-    message: formatTask(data),
+    message,
   };
 }

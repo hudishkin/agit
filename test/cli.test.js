@@ -26,6 +26,7 @@ describe("agit cli", () => {
     assert.match(result.stdout, /start/);
     assert.match(result.stdout, /finish/);
     assert.match(result.stdout, /prune/);
+    assert.match(result.stdout, /done/);
   });
 
   test("--version prints package version", () => {

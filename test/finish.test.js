@@ -151,6 +151,26 @@ describe("finish", () => {
     assert.equal(gh.calls.length, 1);
   });
 
+  test("hints agit done when the PR is already merged", async () => {
+    const { work, origin, tree } = await readyTask();
+    const gh = fakePr();
+
+    await finishCommand(work, "AUTH-123", gh);
+    writeFileSync(join(tree, "extra.txt"), "more\n");
+    await commitCommand(tree, "AUTH-123: extra");
+
+    const result = await finishCommand(work, "AUTH-123", {
+      ...gh,
+      inspectPr: async () => ({ state: "MERGED", merged: true }),
+    });
+
+    assert.equal(result.merged, true);
+    assert.equal(result.already, true);
+    assert.match(result.message, /agit done AUTH-123/);
+    assert.doesNotMatch(gitRun(origin, ["log", "--oneline", "agit/AUTH-123"]), /extra/);
+    assert.equal(gh.calls.length, 1);
+  });
+
   test("retries PR only after push succeeded and gh failed", async () => {
     const { work, origin } = await readyTask();
     let fail = true;

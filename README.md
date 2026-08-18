@@ -153,6 +153,7 @@ agit finish --no-rebase     Skip rebase onto the default branch before the first
 agit status [task-id]       Task state
 agit status --all           Every task: path, age, dirty, PR
 agit abort <task-id>        Drop a local task and its branch
+agit done <task-id>         Remove the worktree after the PR is merged
 agit prune                  List stale worktrees (dry-run)
 agit prune --apply          Delete stale worktrees and local branches
 agit doctor                 Report which protection layers are active
@@ -203,7 +204,7 @@ These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `a
 
 **Two agents in parallel.** `agit start AUTH-123` and `agit start TESTS-124`. Each worktree has its own dirty tree. `agit status --all` shows both. `agit finish` from the main checkout publishes one task.
 
-**Review loop.** After review comments, commit in the same worktree and run `agit finish AUTH-123` again. It pushes to the same draft PR. It does not force-push.
+**Review loop.** After review comments, commit in the same worktree and run `agit finish AUTH-123` again. It pushes to the same draft PR. It does not force-push. After the PR is merged, `agit done AUTH-123` removes the local worktree and branch.
 
 ## Troubleshooting
 
@@ -211,7 +212,8 @@ These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `a
 - **Branch diverged after publish.** agit never force-pushes. Reconcile locally or start a new task id.
 - **`gh` or `glab` missing or not logged in.** Push may have succeeded. Install and authenticate the CLI for `pr.provider`, then `agit finish` again to open the request. Or set `pr.provider: none` to skip that step.
 - **`abort` refuses.** The worktree is dirty, or the task was already published. Commit/restore, or close the PR yourself.
-- **Stale worktrees.** `agit abort` drops one unpublished task. `agit status --all` lists the rest.
+- **PR merged.** Run `agit done <task-id>` to remove the local worktree. `finish` and `status` hint this once GitHub/GitLab report merged.
+- **Stale worktrees.** `agit abort` drops one unpublished task. `agit done` drops a merged one. `agit prune --apply` clears the rest.
 
 ## agit vs git worktree vs worktrunk
 
