@@ -76,7 +76,7 @@ cp AGIT.md ~/.claude/skills/agit/SKILL.md
 
 From a published install: `cp "$(npm root -g)/@hudishkin/agit/AGIT.md" ~/.cursor/skills/agit/SKILL.md`.
 
-The skill tells the agent to use `npx @hudishkin/agit` and the home store, so the working tree stays clean. When the work is done, the agent asks whether to finish; if you say yes, you run `agit finish`.
+The skill tells the agent to use `npx @hudishkin/agit` and the home store, so the working tree stays clean. On first start it asks how to publish (default: always ask). If you say yes to finishing a task, you run `agit finish`.
 
 ## Why this workflow
 
@@ -137,9 +137,10 @@ agit doctor             # confirm what is actually active
 ## Commands
 
 ```text
-agit init [--mode remote|protocol] [--sandbox] [--store repo|home]
-                            Prepare this repository (default: remote, repo store)
+agit init [--finish ask|human|agent] [--sandbox] [--store repo|home]
+                            Prepare this repository (default: ask, repo store)
 agit start <task-id>        Create or resume a task worktree
+agit start --finish ask     Save finish policy for this project (ask|human|agent)
 agit start --sandbox        Enable agent sandboxes without re-running init
 agit start --title --body --issue
                             Store PR title, body, and a GitHub issue
@@ -165,7 +166,10 @@ Every command accepts `--json`. Protocol enforcement still accepts `agit commit`
 
 ```yaml
 workflow:
-  enforcement: remote     # new init default. protocol = agit CLI workflow
+  finish: ask             # default if omitted. ask | human | agent
+                          # ask   → agent asks before each publish; you run agit finish
+                          # human → do not ask each time; you publish from your terminal
+                          # agent → agent asks, then may run agit finish
   sandbox: off            # agents = write Cursor/Claude/Codex sandbox configs on start
 
 pr:
@@ -187,7 +191,7 @@ commit:
 
 `init --yes` without `--checks` looks at the repo (`package.json` scripts.test, pytest, cargo, go) and writes what it finds. Existing non-empty `checks` are left alone.
 
-Existing profiles without `enforcement` stay on `protocol`. Existing profiles without `sandbox` stay `off`. Existing profiles without `pr.provider` stay on `github`. `init` writes `gitlab` when the remote URL looks like GitLab. Isolation lives in this clone's git config, not in the profile. `init --sandbox` is a flag, not `--mode sandbox`.
+Existing profiles without `finish` behave as `ask`. Existing profiles without `enforcement` stay on `protocol`. Existing profiles without `sandbox` stay `off`. Existing profiles without `pr.provider` stay on `github`. `init` writes `gitlab` when the remote URL looks like GitLab. Isolation lives in this clone's git config, not in the profile. `init --sandbox` is a flag, not a finish policy.
 
 These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `allow_direct_push`, `allow_force_push`. Review-loop pushes after the first `finish` are allowed.
 
@@ -220,9 +224,9 @@ These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `a
 
 ## Advanced workflows
 
-New clones default to **remote**: the agent works with local git and asks whether to finish; you run `agit finish`.
+New clones default to **ask**: the agent works with local git and asks whether to finish; you run `agit finish`. Pass `--finish human` or `--finish agent` on `start` (or `init`) to save a different policy for that project.
 
-`agit init --yes --mode protocol` keeps the older loop, where the agent also runs `agit commit` and `agit finish`.
+`agit init --yes --mode protocol` is a hidden legacy loop, where the agent also runs `agit commit` and `agit finish`.
 
 ## Threat model
 

@@ -15,8 +15,11 @@ import { detectProvider } from "../prhost.js";
 import {
   DEFAULT_PROFILE,
   ENFORCEMENT_MODES,
+  finishChosen,
+  finishOf,
   loadProfile,
   normalizeEnforcement,
+  parseFinish,
   profileExists,
   sandboxOf,
   saveProfile,
@@ -51,12 +54,22 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     throw new AgitError({
       code: "error",
       message: "Non-interactive init requires --yes.",
-      hint: "Run: agit init --yes [--mode remote|protocol] [--default-branch main] [--checks <cmd>]",
+      hint: "Run: agit init --yes [--finish ask|human|agent] [--default-branch main] [--checks <cmd>]",
     });
   }
 
   if (!(await isRepo(cwd))) {
     throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
+  }
+
+  if (options.finish) {
+    if (!parseFinish(options.finish)) {
+      throw new AgitError({
+        code: "error",
+        message: `Unknown finish policy: ${options.finish}`,
+        hint: "Use --finish ask, human, or agent.",
+      });
+    }
   }
 
   if (options.mode && !ENFORCEMENT_MODES.includes(options.mode)) {
@@ -102,6 +115,11 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     : existed
       ? sandboxOf(current)
       : "off";
+  const finish = options.finish
+    ? parseFinish(options.finish)
+    : existed && finishChosen(current)
+      ? current.workflow.finish
+      : undefined;
 
   const profile = {
     ...current,
@@ -114,6 +132,7 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
       ...current.workflow,
       enforcement,
       sandbox,
+      ...(finish ? { finish } : {}),
     },
     checks,
     pr: {
@@ -145,6 +164,7 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
           cursor: true,
           copilot: true,
           enforcement,
+          profile,
         });
 
   let install = { attempted: false, installed: false, reason: "skipped" };
@@ -174,6 +194,8 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     default_branch: profile.repo.default_branch,
     enforcement,
     sandbox,
+    finish: finishOf(profile),
+    finish_explicit: finishChosen(profile),
     checks: profile.checks,
     install,
     hooks: Boolean(hook),

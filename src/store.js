@@ -7,7 +7,7 @@ import { detectChecks } from "./detect-checks.js";
 import { NotInitialized } from "./errors.js";
 import { defaultBranch, isRepo, remoteUrl } from "./git.js";
 import { detectProvider } from "./prhost.js";
-import { DEFAULT_PROFILE, loadProfileAt, profileExistsAt, saveProfileAt } from "./profile.js";
+import { DEFAULT_PROFILE, finishChosen, loadProfileAt, profileExistsAt, saveProfileAt } from "./profile.js";
 import { agitRoot } from "./root.js";
 
 export const STORE_KINDS = ["repo", "home"];
@@ -197,6 +197,7 @@ export async function detectedProfile(cwd, overrides = {}) {
       ...current.workflow,
       enforcement,
       sandbox: overrides.sandbox ?? current.workflow.sandbox ?? "off",
+      ...(overrides.finish || finishChosen(current) ? { finish: overrides.finish ?? current.workflow.finish } : {}),
     },
     checks,
     pr: {

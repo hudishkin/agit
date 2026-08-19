@@ -62,6 +62,9 @@ describe("init", () => {
     assert.equal(profile.repo.default_branch, "main");
     assert.equal(profile.workflow.enforcement, "remote");
     assert.equal(profile.workflow.sandbox, "off");
+    assert.equal(profile.workflow.finish, undefined);
+    assert.equal(result.finish, "ask");
+    assert.equal(result.finish_explicit, false);
     assert.equal(profile.pr.provider, "github");
     assert.deepEqual(profile.checks, ["npm test"]);
     assert.match(readFileSync(join(work, "AGENTS.md"), "utf8"), /Local Git is allowed/);
@@ -93,6 +96,16 @@ describe("init", () => {
     await initCommand(work, { yes: true, install: false });
 
     assert.equal(loadProfile(work).workflow.enforcement, "protocol");
+  });
+
+  test("init --finish ask persists the policy", async () => {
+    const { work } = repo();
+
+    const result = await initCommand(work, { yes: true, install: false, finish: "ask" });
+
+    assert.equal(loadProfile(work).workflow.finish, "ask");
+    assert.equal(result.finish, "ask");
+    assert.equal(result.finish_explicit, true);
   });
 
   test("CLI rejects --guard-only", () => {

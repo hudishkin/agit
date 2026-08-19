@@ -28,6 +28,8 @@ If they say no, stop. If they say yes, they run:
 agit finish <task-id>
 ```
 
+On the first start in a project, ask how publishing should work (default: always ask). Persist with `agit start <task-id> --finish ask|human|agent`.
+
 After the PR is merged, a human runs `agit done <task-id>` to remove the local worktree.
 
 If `agit` is not on PATH, use `npx agit`.

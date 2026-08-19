@@ -5,6 +5,7 @@ import { PROFILE_FILE } from "./paths.js";
 
 export const ENFORCEMENT_MODES = ["remote", "protocol", "patch"];
 export const SANDBOX_MODES = ["off", "agents"];
+export const FINISH_POLICIES = ["ask", "human", "agent"];
 
 export function normalizeEnforcement(value) {
   return ENFORCEMENT_MODES.includes(value) ? value : "protocol";
@@ -26,6 +27,29 @@ export function normalizeSandbox(value) {
 
 export function sandboxOf(profile) {
   return normalizeSandbox(profile?.workflow?.sandbox);
+}
+
+export function parseFinish(value) {
+  if (value == null || value === "") {
+    return undefined;
+  }
+  return FINISH_POLICIES.includes(value) ? value : null;
+}
+
+export function finishOf(profile) {
+  const value = profile?.workflow?.finish;
+  return FINISH_POLICIES.includes(value) ? value : "ask";
+}
+
+export function finishChosen(profile) {
+  return FINISH_POLICIES.includes(profile?.workflow?.finish);
+}
+
+export function agentMayFinish(profile) {
+  if (finishChosen(profile)) {
+    return finishOf(profile) === "agent";
+  }
+  return enforcementOf(profile) !== "remote";
 }
 
 export const DEFAULT_PROFILE = {

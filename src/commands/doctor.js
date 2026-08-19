@@ -14,7 +14,7 @@ import { hookPath, hooksInstalled, installHooks } from "../hooks.js";
 import { inspectIsolation } from "../mirror.js";
 import { listPruneCandidates, staleHint } from "../prune.js";
 import { providerOf } from "../prhost.js";
-import { enforcementOf, sandboxOf } from "../profile.js";
+import { enforcementOf, finishChosen, finishOf, sandboxOf } from "../profile.js";
 import { loadWorkspace } from "../store.js";
 import {
   detectAgents,
@@ -111,6 +111,15 @@ async function checkEnvironment(checks, cwd) {
         profile.workflow.enforcement === "remote"
           ? "Enforcement is remote: local git is allowed, publish is blocked"
           : `Enforcement is ${profile.workflow.enforcement}`,
+      );
+      add(
+        checks,
+        "environment",
+        "finish",
+        "ok",
+        finishChosen(profile)
+          ? `Finish policy is ${finishOf(profile)}`
+          : "Finish policy is ask (default). Pass --finish ask|human|agent on start to save it",
       );
       try {
         const branch = await defaultBranch(cwd);

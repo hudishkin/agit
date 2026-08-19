@@ -43,11 +43,13 @@ describe("agit cli", () => {
     assert.doesNotMatch(result.stdout, /install-agent-guards/);
   });
 
-  test("init --help does not advertise patch or --guard-only", () => {
+  test("init --help documents --finish and hides --mode", () => {
     const result = runAgit(["init", "--help"]);
 
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /remote \(default\) or protocol/);
+    assert.match(result.stdout, /--finish/);
+    assert.match(result.stdout, /ask \(default\)/);
+    assert.doesNotMatch(result.stdout, /--mode/);
     assert.doesNotMatch(result.stdout, /patch/);
     assert.doesNotMatch(result.stdout, /guard-only/);
   });

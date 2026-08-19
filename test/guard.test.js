@@ -144,6 +144,13 @@ describe("guard", () => {
     }
   });
 
+  test("remote enforcement allows agit finish when finish policy is agent", () => {
+    const remoteAgent = { enforcement: "remote", allowFinish: true };
+    assert.equal(classifyCommand("agit finish AUTH-1", remoteAgent).decision, "allow");
+    assert.equal(classifyCommand("npx agit finish AUTH-1", remoteAgent).decision, "allow");
+    assert.equal(classifyCommand("git push", remoteAgent).decision, "deny");
+  });
+
   test("blocks mutating HTTP to api.github.com", () => {
     for (const command of [
       "curl -X POST https://api.github.com/repos/acme/x/contents/app.js",

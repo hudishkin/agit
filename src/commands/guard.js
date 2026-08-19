@@ -1,6 +1,6 @@
 import { claudeResponse, classifyCommand, commandFromPayload, cursorResponse } from "../guard.js";
 import { isolationEnabled } from "../mirror.js";
-import { enforcementOf } from "../profile.js";
+import { agentMayFinish, enforcementOf } from "../profile.js";
 import { loadWorkspace } from "../store.js";
 
 function cwdFromPayload(payload) {
@@ -10,12 +10,15 @@ function cwdFromPayload(payload) {
   return process.cwd();
 }
 
-async function enforcementFromCwd(cwd) {
+async function guardOptionsFromCwd(cwd) {
   try {
     const { profile } = await loadWorkspace(cwd, { required: false });
-    return profile ? enforcementOf(profile) : "protocol";
+    if (!profile) {
+      return { enforcement: "protocol", allowFinish: true };
+    }
+    return { enforcement: enforcementOf(profile), allowFinish: agentMayFinish(profile) };
   } catch {
-    return "protocol";
+    return { enforcement: "protocol", allowFinish: true };
   }
 }
 
@@ -41,14 +44,14 @@ export async function guardCommand(vendor, { stdin = process.stdin, stdout = pro
   }
 
   const cwd = cwdFromPayload(payload);
-  const enforcement = await enforcementFromCwd(cwd);
+  const { enforcement, allowFinish } = await guardOptionsFromCwd(cwd);
   let isolated = false;
   try {
     isolated = await isolationEnabled(cwd);
   } catch {
     isolated = false;
   }
-  const verdict = classifyCommand(commandFromPayload(payload), { enforcement, isolated });
+  const verdict = classifyCommand(commandFromPayload(payload), { enforcement, isolated, allowFinish });
 
   if (vendor === "claude") {
     const response = claudeResponse(verdict, enforcement);
