@@ -74,6 +74,8 @@ export function createProgram() {
       .option("--no-install", "Do not add agit as a devDependency")
       .option("--no-hooks", "Do not install the pre-push hook")
       .option("--no-rules", "Do not write Cursor/Claude/Copilot rule files")
+      .option("--editor <name>", "Install skill for cursor, claude, or both")
+      .option("--skills <scope>", "Install skill locally (this repo) or globally (home)")
       .action(async (opts, command) => {
         await runCommand("init", command, () => initCommand(cwdFrom(command), opts));
       }),

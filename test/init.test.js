@@ -275,4 +275,104 @@ describe("init", () => {
     assert.equal(packageHasAgit({ name: "app" }), false);
     assert.equal(packageHasAgit({ devDependencies: { agit: "^0.0.6" } }), false);
   });
+
+  test("--yes without skill flags does not install a skill", async () => {
+    const { work } = repo();
+
+    const result = await initCommand(work, { yes: true, install: false });
+
+    assert.equal(result.skills.skipped, true);
+    assert.equal(existsSync(join(work, ".cursor/skills/agit/SKILL.md")), false);
+    assert.equal(existsSync(join(work, ".claude/skills/agit/SKILL.md")), false);
+  });
+
+  test("installs a local Cursor skill from flags without --yes", async () => {
+    const { work } = repo();
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "AGIT.md"), "utf8");
+
+    const result = await initCommand(work, {
+      install: false,
+      editor: "cursor",
+      skills: "local",
+    });
+
+    const path = join(work, ".cursor/skills/agit/SKILL.md");
+    assert.equal(result.skills.skipped, false);
+    assert.deepEqual(result.skills.editors, ["cursor"]);
+    assert.equal(result.skills.scope, "local");
+    assert.equal(readFileSync(path, "utf8"), source);
+    assert.equal(existsSync(join(work, ".claude/skills/agit/SKILL.md")), false);
+  });
+
+  test("installs global skills for both editors into homeDir", async () => {
+    const { work } = repo();
+    const homeDir = mkdtempSync(join(tmpdir(), "agit-skill-home-"));
+    dirs.push(homeDir);
+
+    const result = await initCommand(
+      work,
+      { yes: true, install: false, editor: "both", skills: "global" },
+      { homeDir },
+    );
+
+    assert.equal(result.skills.scope, "global");
+    assert.deepEqual(result.skills.editors, ["cursor", "claude"]);
+    assert.equal(existsSync(join(homeDir, ".cursor/skills/agit/SKILL.md")), true);
+    assert.equal(existsSync(join(homeDir, ".claude/skills/agit/SKILL.md")), true);
+    assert.equal(existsSync(join(work, ".cursor/skills/agit/SKILL.md")), false);
+  });
+
+  test("prompt answers install a local Claude skill", async () => {
+    const { work } = repo();
+    let prompted = false;
+
+    const result = await initCommand(
+      work,
+      { install: false },
+      {
+        promptSkills: async () => {
+          prompted = true;
+          return { skipped: false, editors: ["claude"], scope: "local" };
+        },
+      },
+    );
+
+    assert.equal(prompted, true);
+    assert.equal(existsSync(join(work, ".claude/skills/agit/SKILL.md")), true);
+    assert.equal(result.skills.scope, "local");
+  });
+
+  test("prompt skip leaves skills uninstalled", async () => {
+    const { work } = repo();
+
+    const result = await initCommand(
+      work,
+      { install: false },
+      {
+        promptSkills: async () => ({ skipped: true, reason: "declined" }),
+      },
+    );
+
+    assert.equal(result.skills.skipped, true);
+    assert.equal(existsSync(join(work, ".cursor/skills/agit/SKILL.md")), false);
+    assert.equal(existsSync(join(work, ".claude/skills/agit/SKILL.md")), false);
+  });
+
+  test("rejects --editor without --skills", async () => {
+    const { work } = repo();
+
+    await assert.rejects(
+      () => initCommand(work, { yes: true, install: false, editor: "cursor" }),
+      AgitError,
+    );
+  });
+
+  test("rejects an unknown editor", async () => {
+    const { work } = repo();
+
+    await assert.rejects(
+      () => initCommand(work, { yes: true, install: false, editor: "vscode", skills: "local" }),
+      AgitError,
+    );
+  });
 });

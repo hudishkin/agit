@@ -51,12 +51,14 @@ describe("agit cli", () => {
     assert.match(result.stdout, /VISUAL|EDITOR/);
   });
 
-  test("init --help documents --finish and hides --mode", () => {
+  test("init --help documents --finish, --editor, and --skills and hides --mode", () => {
     const result = runAgit(["init", "--help"]);
 
     assert.equal(result.status, 0);
     assert.match(result.stdout, /--finish/);
     assert.match(result.stdout, /ask \(default\)/);
+    assert.match(result.stdout, /--editor/);
+    assert.match(result.stdout, /--skills/);
     assert.doesNotMatch(result.stdout, /--mode/);
     assert.doesNotMatch(result.stdout, /patch/);
     assert.doesNotMatch(result.stdout, /guard-only/);

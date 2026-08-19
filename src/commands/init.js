@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir as defaultHomedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { writeAgentsMd } from "../agentsmd.js";
@@ -12,6 +13,7 @@ import { installHooks } from "../hooks.js";
 import { writePrTemplate, writeSetupAgent } from "../onboard.js";
 import { PACKAGE_NAME } from "../paths.js";
 import { detectProvider } from "../prhost.js";
+import { installSkills, resolveSkillChoice } from "../skills.js";
 import {
   DEFAULT_PROFILE,
   ENFORCEMENT_MODES,
@@ -49,18 +51,16 @@ async function defaultNpmInstall(cwd) {
   await execFileAsync("npm", ["install", "-D", PACKAGE_NAME], { cwd, encoding: "utf8" });
 }
 
-export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmInstall } = {}) {
-  if (!options.yes) {
-    throw new AgitError({
-      code: "error",
-      message: "Non-interactive init requires --yes.",
-      hint: "Run: agit init --yes [--finish ask|human|agent] [--default-branch main] [--checks <cmd>]",
-    });
-  }
-
+export async function initCommand(
+  cwd,
+  options = {},
+  { npmInstall = defaultNpmInstall, promptSkills, homeDir = defaultHomedir() } = {},
+) {
   if (!(await isRepo(cwd))) {
     throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
   }
+
+  const skillChoice = await resolveSkillChoice(options, promptSkills ? { prompt: promptSkills } : {});
 
   if (options.finish) {
     if (!parseFinish(options.finish)) {
@@ -185,6 +185,16 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     }
   }
 
+  const skills = skillChoice.skipped
+    ? { skipped: true, reason: skillChoice.reason ?? "not_requested", editors: [], scope: null, files: [] }
+    : installSkills({
+        cwd,
+        editors: skillChoice.editors,
+        scope: skillChoice.scope,
+        homeDir,
+      });
+  const wroteLocalSkills = !skills.skipped && skills.scope === "local" && skills.files.length > 0;
+
   return {
     profile: home ? storeProfilePath(store) : ".agit/profile.yml",
     store: storeKind,
@@ -204,11 +214,17 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     pr_template: prTemplate,
     rules: rules.files,
     guards: rules.guards ?? [],
+    skills,
     message: [
-      home
+      home && !wroteLocalSkills
         ? `Initialized agit in ${store.dir}. The repository working tree was not changed.`
-        : "Initialized agit.",
+        : home
+          ? `Initialized agit in ${store.dir}.`
+          : "Initialized agit.",
       hook?.backup ? `Backed up your previous pre-push hook to ${hook.backup}` : null,
+      skills.files.length
+        ? `Installed agit skill (${skills.editors.join(", ")}, ${skills.scope}):\n${skills.files.map((file) => `- ${file}`).join("\n")}`
+        : null,
       sandbox === "agents"
         ? "workflow.sandbox is agents: agit start writes agent sandbox configs and isolates the clone."
         : "Next: agit start <task-id>",

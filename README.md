@@ -53,7 +53,16 @@ Store location is only an environment override: `AGIT_HOME` (parent directory, d
 
 ## Editor skill
 
-`AGIT.md` is a ready Cursor / Claude Code skill. Copy it once into the editor — no `agit init` in the target repo:
+`agit init` asks which editor should get the skill (Cursor, Claude Code, or both) and whether to install it locally (this repository) or globally (this machine). The same answers can be passed as flags:
+
+```bash
+agit init --yes --editor cursor --skills global
+agit init --yes --editor both --skills local
+```
+
+`--yes` without `--editor` / `--skills` skips the skill, so scripts stay non-interactive.
+
+Manual copy still works:
 
 ```bash
 # Cursor
@@ -129,6 +138,7 @@ agit doctor             # confirm what is actually active
 
 ```text
 agit init [--finish ask|human|agent] [--sandbox] [--store home|repo]
+          [--editor cursor|claude|both] [--skills local|global]
                             Prepare this project (default: home store)
 agit start <task-id>        Create or resume a task worktree
 agit start --finish ask     Save finish policy for this project (ask|human|agent)
