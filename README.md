@@ -26,7 +26,7 @@ agit start REFACTOR-125
 agit status --all
 ```
 
-Each `start` creates `.agit/worktrees/<task-id>` on `agit/<task-id>`. The main checkout stays on the default branch. Each task keeps its own dirty tree, branch, and later draft PR. `finish` from the main checkout publishes only that task.
+Each `start` creates a worktree under the store (`~/.agit/<project>/worktrees/<task-id>` by default) on `agit/<task-id>`. The main checkout stays on the default branch. Each task keeps its own dirty tree, branch, and later draft PR. `finish` from the main checkout publishes only that task.
 
 ## Install
 
@@ -43,22 +43,13 @@ npm i -D @hudishkin/agit
 npx agit init --yes --checks "npm test"
 ```
 
-`init` writes `.agit/profile.yml`, merges an agit section into `AGENTS.md`, and installs the pre-push hook and agent guards. It does not rewrite `origin`.
-
-To keep agit state out of the working tree (no `.agit/` in the repo):
+`init` defaults to the **home store**: `~/.agit/<project>/` (profile, tasks, worktrees, logs). The working tree stays clean. The project id is `{owner}-{name}-{hash}` from the remote and the clone path. Override the parent directory with `AGIT_HOME`.
 
 ```bash
-npx agit init --yes --store home
+npx agit edit          # open this project's profile.yml
 ```
 
-That writes `~/.agit/<project>/` (profile, tasks, worktrees, logs). The project id is `{owner}-{name}-{hash}` from the remote and the clone path. Override the parent directory with `AGIT_HOME`. Make home the default for repos without an in-repo profile:
-
-```yaml
-# ~/.agit/config.yml
-store: home
-```
-
-Or set `AGIT_STORE=home` for one command. An in-repo `.agit/profile.yml` still wins.
+Store location is only an environment override: `AGIT_HOME` (parent directory, default `~/.agit`) and `AGIT_STORE=repo` if you explicitly want `.agit/` in the clone. An in-repo profile does not override the home store.
 
 ## Editor skill
 
@@ -76,7 +67,7 @@ cp AGIT.md ~/.claude/skills/agit/SKILL.md
 
 From a published install: `cp "$(npm root -g)/@hudishkin/agit/AGIT.md" ~/.cursor/skills/agit/SKILL.md`.
 
-The skill tells the agent to use `npx @hudishkin/agit` and the home store, so the working tree stays clean. On first start it asks how to publish (default: always ask). If you say yes to finishing a task, you run `agit finish`.
+The skill tells the agent to use `npx @hudishkin/agit`. State stays in `~/.agit/<project>/`. On first start it asks how to publish (default: always ask). Edit the profile with `agit edit`. If you say yes to finishing a task, you run `agit finish`.
 
 ## Why this workflow
 
@@ -126,7 +117,7 @@ Hooks are first-class for **Cursor** and **Claude Code**. Other agents can still
 
 1. **Agent guards** — Cursor `beforeShellExecution` and Claude Code `PreToolUse` call `agit guard`. In the default workflow, direct publishing is discouraged. In `protocol`, git mutations are redirected to agit.
 2. **pre-push hook** — a raw `git push` fails unless `agit finish` issued a one-use token. Works alongside husky.
-3. **Agent OS sandbox (opt-in)** — `agit start --sandbox` (or `agit init --sandbox`) sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs, points origin at a local mirror, and locks git credentials in the task worktree. No in-repo init: `AGIT_STORE=home npx agit start TASK --sandbox`. `agit finish` still pushes with host credentials from the main checkout. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. Cursor can still read `~/.ssh`; `GH_TOKEN` in your shell is for finish, not for the agent worktree. Undo the mirror with `agit doctor --undo-isolate`.
+3. **Agent OS sandbox (opt-in)** — `agit start --sandbox` (or `agit init --sandbox`) sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs, points origin at a local mirror, and locks git credentials in the task worktree. `agit finish` still pushes with host credentials from the main checkout. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. Cursor can still read `~/.ssh`; `GH_TOKEN` in your shell is for finish, not for the agent worktree. Undo the mirror with `agit doctor --undo-isolate`.
 
 `finish` never force-pushes. On conflict or rewritten history, it stops.
 
@@ -137,13 +128,14 @@ agit doctor             # confirm what is actually active
 ## Commands
 
 ```text
-agit init [--finish ask|human|agent] [--sandbox] [--store repo|home]
-                            Prepare this repository (default: ask, repo store)
+agit init [--finish ask|human|agent] [--sandbox] [--store home|repo]
+                            Prepare this project (default: home store)
 agit start <task-id>        Create or resume a task worktree
 agit start --finish ask     Save finish policy for this project (ask|human|agent)
 agit start --sandbox        Enable agent sandboxes without re-running init
 agit start --title --body --issue
                             Store PR title, body, and a GitHub issue
+agit edit                   Open this project's profile.yml
 agit finish <task-id>       Checks → push → draft PR
 agit finish --squash        Squash commits before the first push
 agit finish --no-rebase     Skip rebase onto the default branch before the first push
@@ -162,7 +154,7 @@ Every command accepts `--json`. Protocol enforcement still accepts `agit commit`
 
 ## Configuration
 
-`.agit/profile.yml`:
+`agit edit` opens this project's profile (`~/.agit/<project>/profile.yml` by default):
 
 ```yaml
 workflow:

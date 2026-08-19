@@ -22,6 +22,7 @@ describe("agit cli", () => {
     assert.equal(result.status, 0);
     assert.match(result.stdout, /Usage: agit/);
     assert.match(result.stdout, /Task-to-draft-PR workflow for AI coding agents/);
+    assert.match(result.stdout, /edit/);
     assert.match(result.stdout, /init/);
     assert.match(result.stdout, /start/);
     assert.match(result.stdout, /status/);
@@ -41,6 +42,13 @@ describe("agit cli", () => {
     assert.doesNotMatch(result.stdout, /\bprompt\b/);
     assert.doesNotMatch(result.stdout, /install-hooks/);
     assert.doesNotMatch(result.stdout, /install-agent-guards/);
+  });
+
+  test("edit --help documents the editor", () => {
+    const result = runAgit(["edit", "--help"]);
+
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /VISUAL|EDITOR/);
   });
 
   test("init --help documents --finish and hides --mode", () => {

@@ -137,7 +137,7 @@ async function checkEnvironment(checks, cwd) {
       add(checks, "environment", "profile", "fail", ".agit/profile.yml exists but cannot be parsed");
     }
   } else {
-    add(checks, "environment", "profile", "fail", "agit is not initialized. Run agit init --yes or agit init --yes --store home");
+    add(checks, "environment", "profile", "fail", "agit is not initialized. Run agit start <task-id> or agit init --yes");
   }
 
   const agitOnPath = await hasCommand("agit");

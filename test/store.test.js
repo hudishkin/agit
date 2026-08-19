@@ -7,7 +7,6 @@ import { abortCommand } from "../src/commands/abort.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { statusCommand } from "../src/commands/status.js";
-import { NotInitialized } from "../src/errors.js";
 import { agitHome, loadStoreProfile, projectId, resolveStore } from "../src/store.js";
 import { loadTask } from "../src/taskstore.js";
 import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
@@ -127,11 +126,25 @@ describe("home store", () => {
     assert.equal(loadStoreProfile(store).workflow.sandbox, "agents");
   });
 
-  test("in-repo profile wins over AGIT_STORE=home", async () => {
+  test("in-repo profile does not override the home store", async () => {
     isolateHome();
-    process.env.AGIT_STORE = "home";
     const { work } = repo();
-    await initCommand(work, { yes: true, install: false, hooks: false, rules: false });
+    await initCommand(work, { yes: true, store: "repo", install: false, hooks: false, rules: false });
+    gitRun(work, ["add", "-A"]);
+    gitRun(work, ["commit", "-m", "chore: init agit"]);
+
+    const started = await startCommand(work, "AUTH-123");
+    assert.equal(existsSync(join(work, ".agit", "worktrees", "AUTH-123")), false);
+    const store = await resolveStore(work);
+    assert.equal(store.kind, "home");
+    assert.match(started.path, /\/worktrees\/AUTH-123$/);
+  });
+
+  test("AGIT_STORE=repo uses the in-repo store", async () => {
+    isolateHome();
+    process.env.AGIT_STORE = "repo";
+    const { work } = repo();
+    await initCommand(work, { yes: true, store: "repo", install: false, hooks: false, rules: false });
     gitRun(work, ["add", "-A"]);
     gitRun(work, ["commit", "-m", "chore: init agit"]);
 
@@ -141,10 +154,15 @@ describe("home store", () => {
     assert.equal(store.kind, "repo");
   });
 
-  test("start without init still requires a store", async () => {
+  test("start without init uses the home store", async () => {
     isolateHome();
     const { work } = repo();
-    await assert.rejects(() => startCommand(work, "AUTH-123"), NotInitialized);
+    const started = await startCommand(work, "AUTH-123");
+    assert.equal(existsSync(join(work, ".agit")), false);
+    const store = await resolveStore(work);
+    assert.equal(store.kind, "home");
+    assert.equal(existsSync(join(store.dir, "profile.yml")), true);
+    assert.equal(existsSync(started.path), true);
   });
 
   test("two clones get different project ids", () => {
@@ -154,13 +172,16 @@ describe("home store", () => {
     assert.notEqual(projectId(first.work, null), projectId(second.work, null));
   });
 
-  test("~/.agit/config.yml store: home selects the home store", async () => {
+  test("config.yml does not select the store", async () => {
     const home = isolateHome();
-    writeFileSync(join(home, "config.yml"), "store: home\n");
+    writeFileSync(join(home, "config.yml"), "store: repo\n");
     const { work } = repo();
 
     const started = await startCommand(work, "AUTH-123");
     assert.equal(existsSync(join(work, ".agit")), false);
+    const store = await resolveStore(work);
+    assert.equal(store.kind, "home");
+    assert.ok(store.dir.startsWith(home));
     assert.equal(existsSync(started.path), true);
   });
 });
