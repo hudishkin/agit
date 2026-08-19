@@ -106,7 +106,7 @@ describe("status", () => {
     const dirty = result.tasks.find((task) => task.task_id === "A1");
     assert.equal(dirty.dirty, true);
     assert.ok(result.stale_count >= 1);
-    assert.match(result.message, /agit prune/);
+    assert.match(result.message, /agit done --stale/);
 
     const aborted = result.tasks.find((task) => task.task_id === "OLD");
     assert.equal(aborted.worktree_exists, false);
@@ -146,7 +146,7 @@ describe("status", () => {
     });
     assert.equal(result.stale_count, 1);
     assert.match(result.message, /agit done AUTH-123/);
-    assert.doesNotMatch(result.message, /agit prune/);
+    assert.doesNotMatch(result.message, /agit done --stale/);
   });
 
   test("status --all shows live commit count and last subject", async () => {

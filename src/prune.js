@@ -125,7 +125,7 @@ export function staleHint(count) {
     return null;
   }
   const noun = count === 1 ? "stale task" : "stale tasks";
-  return `${count} ${noun}. Run: agit prune`;
+  return `${count} ${noun}. Run: agit done --stale`;
 }
 
 async function removeCandidate(root, candidate) {

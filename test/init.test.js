@@ -95,12 +95,14 @@ describe("init", () => {
     assert.equal(loadProfile(work).workflow.enforcement, "protocol");
   });
 
-  test("init --guard-only selects remote enforcement", async () => {
+  test("CLI rejects --guard-only", () => {
     const { work } = repo();
+    const result = spawnSync(process.execPath, [bin, "init", "--yes", "--guard-only", "-C", work], {
+      encoding: "utf8",
+    });
 
-    await initCommand(work, { yes: true, install: false, guardOnly: true });
-
-    assert.equal(loadProfile(work).workflow.enforcement, "remote");
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stderr}${result.stdout}`, /unknown option '--guard-only'/);
   });
 
   test("rejects an unknown enforcement mode", async () => {

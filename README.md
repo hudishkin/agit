@@ -126,7 +126,7 @@ Hooks are first-class for **Cursor** and **Claude Code**. Other agents can still
 
 1. **Agent guards** — Cursor `beforeShellExecution` and Claude Code `PreToolUse` call `agit guard`. In the default workflow, direct publishing is discouraged. In `protocol`, git mutations are redirected to agit.
 2. **pre-push hook** — a raw `git push` fails unless `agit finish` issued a one-use token. Works alongside husky.
-3. **Agent OS sandbox (opt-in)** — `agit start --sandbox` (or `agit init --sandbox`) sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs, points origin at a local mirror, and locks git credentials in the task worktree. No in-repo init: `AGIT_STORE=home npx agit start TASK --sandbox`. `agit finish` still pushes with host credentials from the main checkout. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. Cursor can still read `~/.ssh`; `GH_TOKEN` in your shell is for finish, not for the agent worktree. Undo the mirror with `agit isolate --undo`.
+3. **Agent OS sandbox (opt-in)** — `agit start --sandbox` (or `agit init --sandbox`) sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs, points origin at a local mirror, and locks git credentials in the task worktree. No in-repo init: `AGIT_STORE=home npx agit start TASK --sandbox`. `agit finish` still pushes with host credentials from the main checkout. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. Cursor can still read `~/.ssh`; `GH_TOKEN` in your shell is for finish, not for the agent worktree. Undo the mirror with `agit doctor --undo-isolate`.
 
 `finish` never force-pushes. On conflict or rewritten history, it stops.
 
@@ -137,14 +137,12 @@ agit doctor             # confirm what is actually active
 ## Commands
 
 ```text
-agit init [--mode remote|protocol|patch] [--sandbox] [--store repo|home]
+agit init [--mode remote|protocol] [--sandbox] [--store repo|home]
                             Prepare this repository (default: remote, repo store)
 agit start <task-id>        Create or resume a task worktree
 agit start --sandbox        Enable agent sandboxes without re-running init
 agit start --title --body --issue
                             Store PR title, body, and a GitHub issue
-agit commit -m "..."        Local commit, never a push
-agit commit --files a b     Commit only these paths
 agit finish <task-id>       Checks → push → draft PR
 agit finish --squash        Squash commits before the first push
 agit finish --no-rebase     Skip rebase onto the default branch before the first push
@@ -152,17 +150,14 @@ agit status [task-id]       Task state
 agit status --all           Every task: path, age, dirty, PR
 agit abort <task-id>        Drop a local task and its branch
 agit done <task-id>         Remove the worktree after the PR is merged
-agit prune                  List stale worktrees (dry-run)
-agit prune --apply          Delete stale worktrees and local branches
+agit done --stale           List stale worktrees (dry-run)
+agit done --stale --apply   Delete stale worktrees and local branches
 agit doctor                 Report environment, hooks, and sandbox status
 agit doctor --fix           Reinstall the pre-push hook and agent guards
-agit isolate [--undo]       Point this clone's origin at a local mirror (sandbox)
-agit prompt <task-id>       Copy-paste prompt for an agent
-agit install-hooks          Install the pre-push hook
-agit install-agent-guards   Install the Cursor and Claude tool-call guards
+agit doctor --undo-isolate  Restore origin to the real remote (sandbox)
 ```
 
-Every command accepts `--json`.
+Every command accepts `--json`. Protocol enforcement still accepts `agit commit` for denylist and secret-scan; it is not shown in `--help`.
 
 ## Configuration
 
@@ -211,7 +206,7 @@ These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `a
 - **`gh` or `glab` missing or not logged in.** Push may have succeeded. Install and authenticate the CLI for `pr.provider`, then `agit finish` again to open the request. Or set `pr.provider: none` to skip that step.
 - **`abort` refuses.** The worktree is dirty, or the task was already published. Commit/restore, or close the PR yourself.
 - **PR merged.** Run `agit done <task-id>` to remove the local worktree. `finish` and `status` hint this once GitHub/GitLab report merged.
-- **Stale worktrees.** `agit abort` drops one unpublished task. `agit done` drops a merged one. `agit prune --apply` clears the rest.
+- **Stale worktrees.** `agit abort` drops one unpublished task. `agit done` drops a merged one. `agit done --stale --apply` clears the rest.
 
 ## agit vs git worktree vs worktrunk
 
@@ -228,8 +223,6 @@ These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `a
 New clones default to **remote**: the agent works with local git; a human runs `agit finish`.
 
 `agit init --yes --mode protocol` keeps the older loop, where the agent also runs `agit commit` and `agit finish`.
-
-`init --guard-only` is the same as `--mode remote`.
 
 ## Threat model
 

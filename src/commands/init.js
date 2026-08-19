@@ -63,7 +63,7 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     throw new AgitError({
       code: "error",
       message: `Unknown enforcement mode: ${options.mode}`,
-      hint: "Use --mode remote, --mode protocol, or --mode patch.",
+      hint: "Use --mode remote or --mode protocol.",
     });
   }
 
@@ -91,13 +91,11 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
     : existed && current.checks?.length
       ? current.checks
       : detectChecks(cwd);
-  const enforcement = options.guardOnly
-    ? "remote"
-    : options.mode
-      ? normalizeEnforcement(options.mode)
-      : existed
-        ? current.workflow.enforcement
-        : "remote";
+  const enforcement = options.mode
+    ? normalizeEnforcement(options.mode)
+    : existed
+      ? current.workflow.enforcement
+      : "remote";
 
   const sandbox = options.sandbox
     ? "agents"

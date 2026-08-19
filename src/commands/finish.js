@@ -23,6 +23,7 @@ import {
 import { withTaskLock } from "../lock.js";
 import { isolationEnabled, publishUrl, syncMirror, updateMirrorBranch } from "../mirror.js";
 import { formatTitle, renderPrBody, summarizeCommit } from "../prbody.js";
+import { enforcementOf } from "../profile.js";
 import { resolveTaskTree } from "../root.js";
 import { loadWorkspace, storeLogsDir } from "../store.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
@@ -165,7 +166,10 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase, ins
     let base = await resolveBase(tree, task, profile);
     const ahead = await logOneline(tree, `${base}..HEAD`);
     if (ahead.length === 0) {
-      throw new TaskStateError("Nothing to publish.", "Run agit commit first.");
+      throw new TaskStateError(
+        "Nothing to publish.",
+        enforcementOf(profile) === "remote" ? "Commit with git first." : "Run agit commit first.",
+      );
     }
 
     const needsPush = !wasPushed || publishedSha !== head;
@@ -206,7 +210,9 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase, ins
         saveTask(state, task);
         throw new DirtyTree(
           "Checks passed, but they left the working tree dirty.",
-          "Commit the check output with agit commit, or restore the files, then run agit finish again.",
+          enforcementOf(profile) === "remote"
+            ? "Commit the check output with git, or restore the files, then run agit finish again."
+            : "Commit the check output with agit commit, or restore the files, then run agit finish again.",
         );
       }
 

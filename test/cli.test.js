@@ -16,7 +16,7 @@ function runAgit(args) {
 }
 
 describe("agit cli", () => {
-  test("--help prints usage", () => {
+  test("--help prints the public workflow", () => {
     const result = runAgit(["--help"]);
 
     assert.equal(result.status, 0);
@@ -24,9 +24,59 @@ describe("agit cli", () => {
     assert.match(result.stdout, /Task-to-draft-PR workflow for AI coding agents/);
     assert.match(result.stdout, /init/);
     assert.match(result.stdout, /start/);
+    assert.match(result.stdout, /status/);
     assert.match(result.stdout, /finish/);
-    assert.match(result.stdout, /prune/);
+    assert.match(result.stdout, /abort/);
     assert.match(result.stdout, /done/);
+    assert.match(result.stdout, /doctor/);
+  });
+
+  test("--help hides protocol and repair commands", () => {
+    const result = runAgit(["--help"]);
+
+    assert.equal(result.status, 0);
+    assert.doesNotMatch(result.stdout, /\bcommit\b/);
+    assert.doesNotMatch(result.stdout, /\bprune\b/);
+    assert.doesNotMatch(result.stdout, /\bisolate\b/);
+    assert.doesNotMatch(result.stdout, /\bprompt\b/);
+    assert.doesNotMatch(result.stdout, /install-hooks/);
+    assert.doesNotMatch(result.stdout, /install-agent-guards/);
+  });
+
+  test("init --help does not advertise patch or --guard-only", () => {
+    const result = runAgit(["init", "--help"]);
+
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /remote \(default\) or protocol/);
+    assert.doesNotMatch(result.stdout, /patch/);
+    assert.doesNotMatch(result.stdout, /guard-only/);
+  });
+
+  test("done --help documents --stale", () => {
+    const result = runAgit(["done", "--help"]);
+
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /--stale/);
+    assert.match(result.stdout, /--apply/);
+  });
+
+  test("doctor --help documents repair flags", () => {
+    const result = runAgit(["doctor", "--help"]);
+
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /--fix/);
+    assert.match(result.stdout, /--undo-isolate/);
+  });
+
+  test("hidden commit and isolate still parse", () => {
+    const commit = runAgit(["commit", "--help"]);
+    const isolate = runAgit(["isolate", "--help"]);
+    const prune = runAgit(["prune", "--help"]);
+
+    assert.equal(commit.status, 0);
+    assert.equal(isolate.status, 0);
+    assert.equal(prune.status, 0);
+    assert.match(isolate.stdout, /--undo/);
   });
 
   test("--version prints package version", () => {
@@ -36,10 +86,11 @@ describe("agit cli", () => {
     assert.equal(result.stdout, `${pkg.version}\n`);
   });
 
-  test("protect is not a command", () => {
-    const result = runAgit(["protect"]);
-
-    assert.notEqual(result.status, 0);
-    assert.match(`${result.stderr}${result.stdout}`, /unknown command 'protect'/);
+  test("removed commands are unknown", () => {
+    for (const name of ["prompt", "install-hooks", "install-agent-guards", "protect"]) {
+      const result = runAgit([name]);
+      assert.notEqual(result.status, 0);
+      assert.match(`${result.stderr}${result.stdout}`, new RegExp(`unknown command '${name}'`));
+    }
   });
 });

@@ -8,11 +8,8 @@ import { doneCommand } from "./commands/done.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { finishCommand } from "./commands/finish.js";
 import { guardCommand } from "./commands/guard.js";
-import { installAgentGuardsCommand } from "./commands/guards.js";
-import { installHooksCommand } from "./commands/hooks.js";
 import { initCommand } from "./commands/init.js";
 import { isolateCommand } from "./commands/isolate.js";
-import { promptCommand } from "./commands/prompt.js";
 import { pruneCommand } from "./commands/prune.js";
 import { startCommand } from "./commands/start.js";
 import { statusCommand } from "./commands/status.js";
@@ -69,8 +66,7 @@ export function createProgram() {
       .option("--repo <url>", "Repository URL")
       .option("--default-branch <name>", "Default branch")
       .option("--checks <command>", "Check to run before finish", (value, previous) => [...previous, value], [])
-      .option("--mode <mode>", "Enforcement: remote (default), protocol, or patch")
-      .option("--guard-only", "Remote enforcement; local git stays allowed")
+      .option("--mode <mode>", "Enforcement: remote (default) or protocol")
       .option("--sandbox", "Write Cursor, Claude Code, and Codex sandbox configs on start")
       .option("--store <store>", "repo (default) or home (~/.agit/<project>)")
       .option("--no-install", "Do not add agit as a devDependency")
@@ -104,8 +100,8 @@ export function createProgram() {
 
   applyOutputOptions(
     program
-      .command("commit")
-      .description("Create a local commit for the active task")
+      .command("commit", { hidden: true })
+      .description("Create a local commit for the active task (protocol enforcement)")
       .requiredOption("-m, --message <message>", "Commit message")
       .option("-f, --files <paths...>", "Commit only these paths")
       .action(async (opts, command) => {
@@ -157,15 +153,36 @@ export function createProgram() {
     program
       .command("done")
       .description("Remove a local task worktree after its PR is merged")
-      .argument("<task-id>", "Task id, for example AUTH-123")
-      .action(async (taskId, _opts, command) => {
-        await runCommand("done", command, () => doneCommand(cwdFrom(command), taskId));
+      .argument("[task-id]", "Task id, for example AUTH-123")
+      .option("--stale", "List stale local tasks instead of a single merged task")
+      .option("--apply", "With --stale, delete candidates instead of listing them")
+      .action(async (taskId, opts, command) => {
+        await runCommand("done", command, () => {
+          if (opts.apply && !opts.stale) {
+            throw new AgitError({
+              code: "error",
+              message: "--apply requires --stale.",
+              hint: "Run: agit done --stale --apply",
+            });
+          }
+          if (opts.stale) {
+            return pruneCommand(cwdFrom(command), { apply: Boolean(opts.apply) });
+          }
+          if (!taskId) {
+            throw new AgitError({
+              code: "error",
+              message: "Task id is required unless --stale is set.",
+              hint: "Run: agit done <task-id>  or  agit done --stale",
+            });
+          }
+          return doneCommand(cwdFrom(command), taskId);
+        });
       }),
   );
 
   applyOutputOptions(
     program
-      .command("prune")
+      .command("prune", { hidden: true })
       .description("List or remove stale local task worktrees and branches")
       .option("--apply", "Delete candidates instead of listing them")
       .action(async (opts, command) => {
@@ -178,49 +195,20 @@ export function createProgram() {
       .command("doctor")
       .description("Report environment, hooks, and sandbox status")
       .option("--fix", "Install missing hooks and agent guards")
+      .option("--undo-isolate", "Restore origin to the real remote")
       .action(async (opts, command) => {
         await runCommand("doctor", command, () =>
-          doctorCommand(cwdFrom(command), { fix: Boolean(opts.fix) }),
+          doctorCommand(cwdFrom(command), {
+            fix: Boolean(opts.fix),
+            undoIsolate: Boolean(opts.undoIsolate),
+          }),
         );
       }),
   );
 
   applyOutputOptions(
     program
-      .command("install-hooks")
-      .description("Install a local pre-push hook")
-      .action(async (_opts, command) => {
-        await runCommand("install-hooks", command, () => installHooksCommand(cwdFrom(command)));
-      }),
-  );
-
-  applyOutputOptions(
-    program
-      .command("prompt")
-      .description("Print a copy-paste prompt for an agent")
-      .argument("<task-id>", "Task id, for example AUTH-123")
-      .action(async (taskId, _opts, command) => {
-        await runCommand("prompt", command, () => promptCommand(cwdFrom(command), taskId));
-      }),
-  );
-
-  applyOutputOptions(
-    program
-      .command("install-agent-guards")
-      .description("Install Cursor and Claude tool-call guards plus instruction files")
-      .option("--claude", "Claude Code guard and CLAUDE.md")
-      .option("--cursor", "Cursor guard and .cursor/rules/agit.mdc")
-      .option("--copilot", "Copilot instructions")
-      .action(async (opts, command) => {
-        await runCommand("install-agent-guards", command, () =>
-          installAgentGuardsCommand(cwdFrom(command), opts),
-        );
-      }),
-  );
-
-  applyOutputOptions(
-    program
-      .command("isolate")
+      .command("isolate", { hidden: true })
       .description("Point origin at a local mirror so git push origin cannot reach GitHub")
       .option("--undo", "Restore origin to the real remote")
       .action(async (opts, command) => {

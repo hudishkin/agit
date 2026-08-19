@@ -30,7 +30,7 @@ export async function pruneCommand(cwd, { apply = false, inspectPr } = {}) {
       candidates,
       removed: [],
       stale_count: candidates.length,
-      message: `Would remove ${candidates.length} stale ${candidates.length === 1 ? "task" : "tasks"}. Re-run with: agit prune --apply\n${formatCandidates(candidates)}`,
+      message: `Would remove ${candidates.length} stale ${candidates.length === 1 ? "task" : "tasks"}. Re-run with: agit done --stale --apply\n${formatCandidates(candidates)}`,
     };
   }
 
