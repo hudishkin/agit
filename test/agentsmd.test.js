@@ -55,6 +55,7 @@ describe("agentsmd", () => {
 
     assert.match(text, /Local Git is allowed/);
     assert.match(text, /agit start <task-id>/);
+    assert.match(text, /ask the user whether to finish/);
     assert.doesNotMatch(text, /Do not use Git mutations for task workflow/);
   });
 });

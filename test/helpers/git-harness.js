@@ -26,6 +26,9 @@ function configure(cwd) {
 }
 
 export function createGitRepo({ branch = "main" } = {}) {
+  if (!process.env.AGIT_HOME && process.env.AGIT_STORE === undefined) {
+    process.env.AGIT_STORE = "repo";
+  }
   const root = mkdtempSync(join(tmpdir(), "agit-"));
   const origin = join(root, "origin.git");
   const work = join(root, "work");

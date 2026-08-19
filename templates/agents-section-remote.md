@@ -9,16 +9,21 @@ Start the task (you may run this):
 agit start <task-id>
 ```
 
-Work only in the path `start` printed (`.agit/worktrees/<task-id>`). Do not run `git worktree`.
+Work only in the path `start` printed. Do not run `git worktree`.
 
 Local Git is allowed: commit, branch, history, `status`, `diff`, `log`.
 
 Do not push. Do not create or merge pull requests. Do not pass `--no-verify`.
-Do not run `agit finish`. A human publishes from their own terminal:
+Do not run `agit finish` yourself.
+
+When the local work is done, ask the user whether to finish the task (publish a draft PR).
+If they say no, stop. If they say yes, they run:
 
 ```bash
 agit finish <task-id>
 ```
+
+On the first start in a project, ask how publishing should work (default: always ask). Persist with `agit start <task-id> --finish ask|human|agent`.
 
 After the PR is merged, a human runs `agit done <task-id>` to remove the local worktree.
 
@@ -28,6 +33,6 @@ This file is a hint. Tool-call guards block publish commands before the shell ru
 
 ## If something fails
 
-- A push, `gh pr`, or `glab mr` command was blocked → stop. A human runs `agit finish <task-id>`.
+- A push, `gh pr`, or `glab mr` command was blocked → stop. Ask the user whether to finish; if they say yes, they run `agit finish <task-id>`.
 - Do not `git push` manually.
 <!-- agit:end -->

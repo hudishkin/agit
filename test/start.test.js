@@ -98,7 +98,10 @@ describe("start", () => {
     assert.equal(loadTask(work, "AUTH-123").status, "started");
     assert.equal(loadTask(work, "AUTH-123").worktree, ".agit/worktrees/AUTH-123");
     assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
-    assert.match(result.message, /A human publishes/);
+    assert.match(result.message, /ask the user whether to finish/);
+    assert.match(result.message, /--finish ask\|human\|agent/);
+    assert.equal(result.finish, "ask");
+    assert.equal(result.finish_explicit, false);
     assert.match(result.message, /Work in:/);
     assert.doesNotMatch(result.message, /agit commit -m/);
   });
@@ -244,5 +247,27 @@ describe("start", () => {
     assert.equal(existsSync(join(result.path, ".claude/settings.json")), true);
     assert.equal(existsSync(join(result.path, ".codex/config.toml")), true);
     assert.equal(isMirrorUrl(created.work, gitRun(created.work, ["remote", "get-url", "origin"]).trim()), true);
+  });
+
+  test("start --finish ask saves the policy for later starts", async () => {
+    const created = await readyRepo();
+    const first = await startCommand(created.work, "AUTH-123", { finish: "ask" });
+
+    assert.equal(first.finish, "ask");
+    assert.equal(first.finish_explicit, true);
+    assert.doesNotMatch(first.message, /not saved yet|Pass --finish/);
+    assert.equal(loadProfile(created.work).workflow.finish, "ask");
+
+    const second = await startCommand(created.work, "AUTH-123");
+    assert.equal(second.finish_explicit, true);
+    assert.doesNotMatch(second.message, /Pass --finish/);
+  });
+
+  test("start --finish rejects an unknown policy", async () => {
+    const { work } = await readyRepo();
+    await assert.rejects(() => startCommand(work, "AUTH-123", { finish: "maybe" }), (error) => {
+      assert.match(error.message, /Unknown finish policy/);
+      return true;
+    });
   });
 });

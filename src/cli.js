@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { abortCommand } from "./commands/abort.js";
 import { commitCommand } from "./commands/commit.js";
 import { doneCommand } from "./commands/done.js";
 import { doctorCommand } from "./commands/doctor.js";
+import { editCommand } from "./commands/edit.js";
 import { finishCommand } from "./commands/finish.js";
 import { guardCommand } from "./commands/guard.js";
 import { initCommand } from "./commands/init.js";
@@ -66,9 +67,10 @@ export function createProgram() {
       .option("--repo <url>", "Repository URL")
       .option("--default-branch <name>", "Default branch")
       .option("--checks <command>", "Check to run before finish", (value, previous) => [...previous, value], [])
-      .option("--mode <mode>", "Enforcement: remote (default) or protocol")
+      .addOption(new Option("--mode <mode>", "Legacy enforcement: remote or protocol").hideHelp())
+      .option("--finish <policy>", "Who publishes: ask (default), human, or agent")
       .option("--sandbox", "Write Cursor, Claude Code, and Codex sandbox configs on start")
-      .option("--store <store>", "repo (default) or home (~/.agit/<project>)")
+      .option("--store <store>", "home (default, ~/.agit/<project>) or repo (.agit in the clone)")
       .option("--no-install", "Do not add agit as a devDependency")
       .option("--no-hooks", "Do not install the pre-push hook")
       .option("--no-rules", "Do not write Cursor/Claude/Copilot rule files")
@@ -86,6 +88,7 @@ export function createProgram() {
       .option("--body <body>", "Body stored for the draft PR")
       .option("--issue <number>", "GitHub issue to close from the draft PR")
       .option("--sandbox", "Enable agent sandboxes without re-running init")
+      .option("--finish <policy>", "Save finish policy: ask, human, or agent")
       .action(async (taskId, opts, command) => {
         await runCommand("start", command, () =>
           startCommand(cwdFrom(command), taskId, {
@@ -93,8 +96,18 @@ export function createProgram() {
             body: opts.body,
             issue: opts.issue,
             sandbox: Boolean(opts.sandbox),
+            finish: opts.finish,
           }),
         );
+      }),
+  );
+
+  applyOutputOptions(
+    program
+      .command("edit")
+      .description("Open this project's agit profile in $VISUAL or $EDITOR")
+      .action(async (_opts, command) => {
+        await runCommand("edit", command, () => editCommand(cwdFrom(command)));
       }),
   );
 

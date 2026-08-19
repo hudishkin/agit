@@ -52,8 +52,14 @@ export const CLAUDE_DENY_RULES_REMOTE = [
 
 export const CLAUDE_DENY_RULES = CLAUDE_DENY_RULES_PROTOCOL;
 
-export function claudeDenyRules(enforcement = "protocol") {
-  return enforcement === "remote" ? CLAUDE_DENY_RULES_REMOTE : CLAUDE_DENY_RULES_PROTOCOL;
+export function claudeDenyRules(enforcement = "protocol", { allowFinish = false } = {}) {
+  if (enforcement !== "remote") {
+    return CLAUDE_DENY_RULES_PROTOCOL;
+  }
+  if (allowFinish) {
+    return CLAUDE_DENY_RULES_REMOTE.filter((rule) => !rule.includes("agit finish"));
+  }
+  return CLAUDE_DENY_RULES_REMOTE;
 }
 
 const FALLBACKS = {
@@ -187,7 +193,7 @@ export function writeCursorHooks(cwd) {
   return path;
 }
 
-export function writeClaudeSettings(cwd, { enforcement = "protocol" } = {}) {
+export function writeClaudeSettings(cwd, { enforcement = "protocol", allowFinish = false } = {}) {
   const path = join(cwd, CLAUDE_SETTINGS_FILE);
   const config = readJson(path, { required: true });
   config.hooks = config.hooks && typeof config.hooks === "object" ? config.hooks : {};
@@ -205,11 +211,15 @@ export function writeClaudeSettings(cwd, { enforcement = "protocol" } = {}) {
   config.hooks.PreToolUse = groups;
 
   config.permissions = config.permissions && typeof config.permissions === "object" ? config.permissions : {};
-  const wanted = claudeDenyRules(enforcement);
+  const wanted = claudeDenyRules(enforcement, { allowFinish });
   const protocolOnly = CLAUDE_DENY_RULES_PROTOCOL.filter((rule) => !CLAUDE_DENY_RULES_REMOTE.includes(rule));
+  const finishRules = CLAUDE_DENY_RULES_REMOTE.filter((rule) => rule.includes("agit finish"));
   let deny = asArray(config.permissions.deny);
   if (enforcement === "remote") {
     deny = deny.filter((rule) => !protocolOnly.includes(rule));
+  }
+  if (allowFinish) {
+    deny = deny.filter((rule) => !finishRules.includes(rule));
   }
   for (const rule of wanted) {
     if (!deny.includes(rule)) {

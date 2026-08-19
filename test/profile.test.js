@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
-import { DEFAULT_PROFILE, loadProfile, saveProfile } from "../src/profile.js";
+import { DEFAULT_PROFILE, finishChosen, finishOf, loadProfile, saveProfile } from "../src/profile.js";
 import { assertTaskId, loadTask, saveTask } from "../src/taskstore.js";
 import { TaskStateError } from "../src/errors.js";
 
@@ -31,9 +31,20 @@ describe("profile and tasks", () => {
     assert.equal(loaded.workflow.branch_prefix, DEFAULT_PROFILE.workflow.branch_prefix);
     assert.equal(loaded.workflow.enforcement, "protocol");
     assert.equal(loaded.workflow.sandbox, "off");
+    assert.equal(loaded.workflow.finish, undefined);
     assert.equal(loaded.pr.provider, "github");
     assert.deepEqual(loaded.checks, ["npm test"]);
     assert.ok(loaded.commit.denylist.includes(".env"));
+    assert.equal(finishOf(loaded), "ask");
+    assert.equal(finishChosen(loaded), false);
+  });
+
+  test("finish policy defaults to ask until saved", () => {
+    assert.equal(finishOf({}), "ask");
+    assert.equal(finishChosen({}), false);
+    assert.equal(finishOf({ workflow: { finish: "human" } }), "human");
+    assert.equal(finishChosen({ workflow: { finish: "human" } }), true);
+    assert.equal(finishOf({ workflow: { finish: "nope" } }), "ask");
   });
 
   test("roundtrips a task", () => {

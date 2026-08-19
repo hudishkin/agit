@@ -8,18 +8,15 @@ import {
   writeCursorHooks,
   writeGuardScript,
 } from "../guardfiles.js";
-import { enforcementOf } from "../profile.js";
+import { agentMayFinish, enforcementOf } from "../profile.js";
 import { loadWorkspace } from "../store.js";
 
-async function enforcementFor(cwd, override) {
-  if (override) {
-    return override;
-  }
+async function profileFor(cwd) {
   try {
     const { profile } = await loadWorkspace(cwd, { required: false });
-    return profile ? enforcementOf(profile) : "protocol";
+    return profile;
   } catch {
-    return "protocol";
+    return null;
   }
 }
 
@@ -48,7 +45,9 @@ export async function installAgentGuardsCommand(cwd, options = {}) {
     cursor: none || Boolean(options.cursor),
     copilot: none || Boolean(options.copilot),
   };
-  const enforcement = await enforcementFor(cwd, options.enforcement);
+  const profile = options.profile ?? (await profileFor(cwd));
+  const enforcement = options.enforcement ?? (profile ? enforcementOf(profile) : "protocol");
+  const allowFinish = options.allowFinish ?? (profile ? agentMayFinish(profile) : enforcement !== "remote");
   const section = loadAgentsSection(enforcement);
 
   const files = [];
@@ -57,7 +56,7 @@ export async function installAgentGuardsCommand(cwd, options = {}) {
   if (want.claude) {
     files.push(writeMarkedFile(cwd, CLAUDE_FILE, section));
     guards.push(writeGuardScript(cwd, CLAUDE_GUARD_SCRIPT, "claude"));
-    guards.push(writeClaudeSettings(cwd, { enforcement }));
+    guards.push(writeClaudeSettings(cwd, { enforcement, allowFinish }));
   }
   if (want.cursor) {
     files.push(writeCursorRule(cwd, section, enforcement));

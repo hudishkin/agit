@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import yaml from "js-yaml";
@@ -7,7 +7,7 @@ import { detectChecks } from "./detect-checks.js";
 import { NotInitialized } from "./errors.js";
 import { defaultBranch, isRepo, remoteUrl } from "./git.js";
 import { detectProvider } from "./prhost.js";
-import { DEFAULT_PROFILE, loadProfileAt, profileExistsAt, saveProfileAt } from "./profile.js";
+import { DEFAULT_PROFILE, finishChosen, loadProfileAt, profileExistsAt, saveProfileAt } from "./profile.js";
 import { agitRoot } from "./root.js";
 
 export const STORE_KINDS = ["repo", "home"];
@@ -34,7 +34,10 @@ export function parseRepoUrl(url) {
 }
 
 export function normalizeStoreKind(value) {
-  return STORE_KINDS.includes(value) ? value : "repo";
+  if (STORE_KINDS.includes(value)) {
+    return value;
+  }
+  return wantsHome() ? "home" : "repo";
 }
 
 export function agitHome() {
@@ -61,18 +64,6 @@ export function projectId(root, remote) {
     parsed.owner && parsed.name ? slugify(`${parsed.owner}-${parsed.name}`) : slugify(basename(root));
   const path = existsSync(root) ? realpathSync(root) : root;
   return `${slug}-${shortHash(path)}`;
-}
-
-export function readGlobalConfig(home = agitHome()) {
-  const path = join(home, "config.yml");
-  if (!existsSync(path)) {
-    return {};
-  }
-  try {
-    return yaml.load(readFileSync(path, "utf8")) ?? {};
-  } catch {
-    return {};
-  }
 }
 
 export function storeProfilePath(store) {
@@ -118,7 +109,7 @@ async function homeStore(root) {
   return { kind: "home", root, dir: join(agitHome(), project), project, remote };
 }
 
-function wantsHome(preferred) {
+export function wantsHome(preferred) {
   if (preferred === "home") {
     return true;
   }
@@ -131,26 +122,18 @@ function wantsHome(preferred) {
   if (process.env.AGIT_STORE === "repo") {
     return false;
   }
-  return readGlobalConfig().store === "home";
+  return true;
 }
 
 export async function resolveStore(cwd, { preferred } = {}) {
   const root = await agitRoot(cwd);
   const repo = repoStore(root);
   const home = await homeStore(root);
-  const repoReady = storeHasProfile(repo);
-  const homeReady = storeHasProfile(home);
 
-  if (preferred === "home" || (wantsHome(preferred) && !repoReady)) {
-    return home;
-  }
-  if (repoReady) {
+  if (!wantsHome(preferred)) {
     return repo;
   }
-  if (homeReady || wantsHome(preferred)) {
-    return home;
-  }
-  return { kind: "none", root, dir: repo.dir, project: null };
+  return home;
 }
 
 export function writeStoreSource(store) {
@@ -197,6 +180,7 @@ export async function detectedProfile(cwd, overrides = {}) {
       ...current.workflow,
       enforcement,
       sandbox: overrides.sandbox ?? current.workflow.sandbox ?? "off",
+      ...(overrides.finish || finishChosen(current) ? { finish: overrides.finish ?? current.workflow.finish } : {}),
     },
     checks,
     pr: {
@@ -227,20 +211,17 @@ export async function loadWorkspace(cwd, { required = true, createHome = false, 
     throw new NotInitialized("Not a Git repository.", "Run this command inside a Git repository.");
   }
 
-  let store = await resolveStore(cwd, { preferred });
-  if (!storeHasProfile(store) && (createHome || store.kind === "home") && store.kind !== "repo") {
-    if (store.kind === "none") {
-      store = await resolveStore(cwd, { preferred: "home" });
-    }
-    if (createHome || wantsHome(preferred)) {
-      await ensureHomeProfile(store, store.root);
-    }
+  const store = await resolveStore(cwd, { preferred });
+  if (!storeHasProfile(store) && store.kind === "home" && (createHome || wantsHome(preferred))) {
+    await ensureHomeProfile(store, store.root);
   }
 
   if (required && !storeHasProfile(store)) {
     throw new NotInitialized(
       "agit is not initialized.",
-      "Run agit init --yes, or agit init --yes --store home to keep state out of the repository.",
+      wantsHome(preferred)
+        ? "Run agit start <task-id> (home store is the default), or agit init --yes."
+        : "Run agit init --yes --store repo, or unset AGIT_STORE=repo to use the home store.",
     );
   }
 

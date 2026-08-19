@@ -29,7 +29,7 @@ const GIT_HINTS = {
 
 const MUTATING_GIT = new Set(Object.keys(GIT_HINTS));
 
-const REMOTE_PUSH_HINT = "A human publishes with agit finish <task-id>.";
+const REMOTE_PUSH_HINT = "Ask the user whether to finish. If they say yes, they run agit finish <task-id>.";
 const REMOTE_FOOTER = "Local git is allowed. Do not push or create pull requests.";
 const PROTOCOL_FOOTER = "Read-only git is allowed: git status, git diff, git log.";
 
@@ -132,12 +132,14 @@ const ALLOW = { decision: "allow", reason: null, hint: null };
 
 function optionsOf(options) {
   if (typeof options === "number") {
-    return { depth: options, enforcement: "protocol", isolated: false };
+    return { depth: options, enforcement: "protocol", isolated: false, allowFinish: true };
   }
+  const enforcement = options?.enforcement === "remote" ? "remote" : "protocol";
   return {
     depth: options?.depth ?? 0,
-    enforcement: options?.enforcement === "remote" ? "remote" : "protocol",
+    enforcement,
     isolated: Boolean(options?.isolated),
+    allowFinish: options?.allowFinish ?? enforcement !== "remote",
   };
 }
 
@@ -146,7 +148,7 @@ function publishHint(enforcement) {
 }
 
 export function classifyCommand(command, options = {}) {
-  const { depth, enforcement, isolated } = optionsOf(options);
+  const { depth, enforcement, isolated, allowFinish } = optionsOf(options);
   if (typeof command !== "string" || !command.trim()) {
     return ALLOW;
   }
@@ -200,7 +202,7 @@ export function classifyCommand(command, options = {}) {
 
     const agitIndex = tokens.findIndex(isAgitBinary);
     if (agitIndex !== -1) {
-      const verdict = classifyAgit(tokens, agitIndex, enforcement);
+      const verdict = classifyAgit(tokens, agitIndex, allowFinish);
       if (verdict.decision === "deny") {
         return verdict;
       }
@@ -212,7 +214,7 @@ export function classifyCommand(command, options = {}) {
         if (!/\s/.test(token)) {
           continue;
         }
-        const verdict = classifyCommand(token, { depth: depth + 1, enforcement, isolated });
+        const verdict = classifyCommand(token, { depth: depth + 1, enforcement, isolated, allowFinish });
         if (verdict.decision === "deny") {
           return verdict;
         }
@@ -267,7 +269,7 @@ function classifyGit(tokens, gitIndex, enforcement, isolated) {
   if (name === "config" && isolated && readsPushUrl(args)) {
     return denial(
       "The publish URL is not visible to the agent.",
-      "A human publishes with agit finish <task-id>.",
+      "Ask the user whether to finish. If they say yes, they run agit finish <task-id>.",
     );
   }
 
@@ -434,15 +436,12 @@ function isAgitBinary(token) {
   return bare === "agit" || bare.endsWith("/agit") || bare === "agit.js" || bare.endsWith("/agit.js");
 }
 
-function classifyAgit(tokens, agitIndex, enforcement) {
-  if (enforcement !== "remote") {
-    return ALLOW;
-  }
+function classifyAgit(tokens, agitIndex, allowFinish) {
   const { name } = subcommandOf(tokens, agitIndex);
-  if (name === "finish") {
+  if (name === "finish" && !allowFinish) {
     return denial(
-      "agit finish is not allowed for the agent in remote mode.",
-      "A human runs agit finish <task-id> in their own terminal.",
+      "agit finish is not allowed for the agent.",
+      "Ask the user whether to finish. If they say yes, they run agit finish <task-id>.",
     );
   }
   return ALLOW;

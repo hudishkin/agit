@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import { DirtyTree, TaskStateError } from "../errors.js";
+import { dirname, join } from "node:path";
+import { AgitError, DirtyTree, TaskStateError } from "../errors.js";
 import { ensureGitignore } from "../gitignore.js";
 import {
   addWorktree,
@@ -15,52 +15,84 @@ import {
 } from "../git.js";
 import { withTaskLock } from "../lock.js";
 import { enableIsolation, inspectIsolation, syncMirror } from "../mirror.js";
-import { enforcementOf, sandboxOf } from "../profile.js";
+import { CLAUDE_SETTINGS_FILE, writeClaudeSettings } from "../guardfiles.js";
+import { agentMayFinish, enforcementOf, finishChosen, finishOf, parseFinish, sandboxOf } from "../profile.js";
 import { resolveTaskTree, worktreeAbsPath, worktreeRelPath } from "../root.js";
 import { applySandbox, lockWorktreeCredentials } from "../sandbox.js";
 import { loadWorkspace, saveStoreProfile } from "../store.js";
 import { assertTaskId, loadTask, saveTask, taskExists } from "../taskstore.js";
 
-function nextHint(taskId, enforcement, path, sandbox = "off") {
+function nextHint(taskId, profile, path) {
   const work = path ? `Work in: ${path}` : null;
+  const sandbox = sandboxOf(profile);
   const sandboxLine =
     sandbox === "agents"
       ? "Agent sandbox configs written. Origin is the local mirror. Worktree git credentials are locked."
       : null;
-  if (enforcement === "remote") {
+  const persistLine = finishChosen(profile)
+    ? null
+    : "Finish policy is ask (default). Pass --finish ask|human|agent on start to save it for this project.";
+
+  if (enforcementOf(profile) !== "remote") {
     return [
       `Task started: ${taskId}`,
       work,
       sandboxLine,
-      `Work with local git. Do not push.`,
-      `A human publishes with:`,
+      `Work normally, but do not use git push directly.`,
+      `When ready, run:`,
+      `  agit commit -m "${taskId}: <summary>"`,
       `  agit finish ${taskId}`,
     ]
       .filter(Boolean)
       .join("\n");
   }
 
+  const finish = finishOf(profile);
+  const publish =
+    finish === "human"
+      ? [
+          `Do not run agit finish. Publish from your terminal when ready:`,
+          `  agit finish ${taskId}`,
+        ]
+      : finish === "agent"
+        ? [
+            `When the work is done, ask the user whether to finish. If they say yes, run:`,
+            `  agit finish ${taskId}`,
+          ]
+        : [
+            `When the work is done, ask the user whether to finish. If they say yes, they run:`,
+            `  agit finish ${taskId}`,
+          ];
+
   return [
     `Task started: ${taskId}`,
     work,
     sandboxLine,
-    `Work normally, but do not use git push directly.`,
-    `When ready, run:`,
-    `  agit commit -m "${taskId}: <summary>"`,
-    `  agit finish ${taskId}`,
+    `Work with local git. Do not push.`,
+    ...publish,
+    persistLine,
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-async function withSandbox(result, profile) {
-  const files = applySandbox(result.path, profile);
-  if (sandboxOf(profile) !== "agents") {
-    return result;
-  }
-  await lockWorktreeCredentials(result.path);
+function startFields(fields, profile) {
   return {
-    ...result,
+    ...fields,
+    finish: finishOf(profile),
+    finish_explicit: finishChosen(profile),
+  };
+}
+
+async function withSandbox(result, profile) {
+  const tagged = startFields(result, profile);
+  const files = applySandbox(tagged.path, profile);
+  if (sandboxOf(profile) !== "agents") {
+    return tagged;
+  }
+  await lockWorktreeCredentials(tagged.path);
+  return {
+    ...tagged,
     sandbox: "agents",
     sandbox_files: files,
   };
@@ -160,6 +192,41 @@ function enableRequestedSandbox(store, profile, requested) {
   return next;
 }
 
+function enableRequestedFinish(store, profile, requested) {
+  if (requested == null || requested === "") {
+    return profile;
+  }
+  const finish = parseFinish(requested);
+  if (!finish) {
+    throw new AgitError({
+      code: "error",
+      message: `Unknown finish policy: ${requested}`,
+      hint: "Use --finish ask, human, or agent.",
+    });
+  }
+  if (profile.workflow.finish === finish) {
+    return profile;
+  }
+  const next = {
+    ...profile,
+    workflow: { ...profile.workflow, finish },
+  };
+  saveStoreProfile(store, next);
+  const settings = join(store.root, CLAUDE_SETTINGS_FILE);
+  if (existsSync(settings)) {
+    writeClaudeSettings(store.root, {
+      enforcement: enforcementOf(next),
+      allowFinish: agentMayFinish(next),
+    });
+  }
+  return next;
+}
+
+function persistRequested(store, profile, metadata) {
+  let next = enableRequestedSandbox(store, profile, metadata.sandbox);
+  return enableRequestedFinish(store, next, metadata.finish);
+}
+
 export async function startCommand(cwd, taskId, metadata = {}) {
   assertTaskId(taskId);
 
@@ -194,7 +261,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
 
   return withTaskLock(state, taskId, async () => {
     if (taskExists(state, taskId)) {
-      profile = enableRequestedSandbox(store, profile, requestedSandbox);
+      profile = persistRequested(store, profile, metadata);
       const task = loadTask(state, taskId);
       const intended = worktreeAbsPath(store, taskId);
       if (!existsSync(intended) && !(await branchExists(root, task.branch))) {
@@ -217,7 +284,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
             path: intended,
             resumed: true,
             status: task.status,
-            message: [`Restarted aborted task ${taskId} on ${task.branch}.`, note, nextHint(taskId, enforcementOf(profile), intended, sandboxOf(profile))]
+            message: [`Restarted aborted task ${taskId} on ${task.branch}.`, note, nextHint(taskId, profile, intended)]
               .filter(Boolean)
               .join("\n"),
           },
@@ -245,7 +312,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
           path,
           resumed: true,
           status: task.status,
-          message: `${wasAborted ? "Restarted aborted" : "Resumed"} task ${taskId} on ${task.branch}.\n${nextHint(taskId, enforcementOf(profile), path, sandboxOf(profile))}`,
+          message: `${wasAborted ? "Restarted aborted" : "Resumed"} task ${taskId} on ${task.branch}.\n${nextHint(taskId, profile, path)}`,
         },
         profile,
       );
@@ -258,7 +325,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
       );
     }
 
-    profile = enableRequestedSandbox(store, profile, requestedSandbox);
+    profile = persistRequested(store, profile, metadata);
 
     const { ref: startPoint, note } = await resolveStartPoint(root, base, Boolean(url), {
       preferOrigin: isolated,
@@ -293,7 +360,7 @@ export async function startCommand(cwd, taskId, metadata = {}) {
         path,
         resumed: false,
         status: "started",
-        message: [note, nextHint(taskId, enforcementOf(profile), path, sandboxOf(profile))].filter(Boolean).join("\n"),
+        message: [note, nextHint(taskId, profile, path)].filter(Boolean).join("\n"),
       },
       profile,
     );
