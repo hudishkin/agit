@@ -30,11 +30,11 @@ const execFileAsync = promisify(execFile);
 
 export const LAYERS = {
   environment: "Environment",
-  server: "Layer 1: server-side rules (cannot be bypassed locally)",
-  agent: "Layer 2: agent tool-call guards (block the command before the shell)",
-  git: "Layer 3: git pre-push hook (guardrail, bypassable with --no-verify)",
-  credential: "Layer 4: push credential boundary",
-  sandbox: "Layer 5: agent OS sandbox",
+  server: "Publish host",
+  agent: "Agent tool-call guards",
+  git: "Git pre-push hook",
+  credential: "Origin",
+  sandbox: "Agent OS sandbox",
 };
 
 async function hasCommand(name) {
@@ -178,118 +178,33 @@ async function checkServerLayer(checks, profile) {
 
   if (provider === "none") {
     add(checks, "server", "gh", "ok", "Host CLI is not required (pr.provider is none)");
-    add(checks, "server", "server_rules", "unknown", "Server-side rules are not checked when pr.provider is none");
     return;
   }
 
   if (provider === "gitlab") {
     if (!(await hasCommand("glab"))) {
       add(checks, "server", "glab", "warn", "glab is not on PATH; cannot open a draft merge request");
-      add(checks, "server", "server_rules", "unknown", "agit protect is GitHub-only; configure protected branches on GitLab");
       return;
     }
     if ((await runCli("glab", ["auth", "status"])) === null) {
       add(checks, "server", "glab", "warn", "glab is installed but not authenticated. Run glab auth login");
-      add(checks, "server", "server_rules", "unknown", "agit protect is GitHub-only; configure protected branches on GitLab");
       return;
     }
     add(checks, "server", "glab", "ok", "glab is installed and authenticated");
-    add(checks, "server", "server_rules", "unknown", "agit protect is GitHub-only; configure protected branches on GitLab");
     return;
   }
 
   if (!(await hasCommand("gh"))) {
-    add(checks, "server", "gh", "warn", "gh is not on PATH; cannot read GitHub rules or open a draft PR");
-    add(checks, "server", "server_rules", "unknown", "Cannot verify server-side rules without gh");
+    add(checks, "server", "gh", "warn", "gh is not on PATH; cannot open a draft PR");
     return;
   }
 
   if ((await gh(["auth", "status"])) === null) {
     add(checks, "server", "gh", "warn", "gh is installed but not authenticated. Run gh auth login");
-    add(checks, "server", "server_rules", "unknown", "Cannot verify server-side rules without gh auth");
     return;
   }
 
   add(checks, "server", "gh", "ok", "gh is installed and authenticated");
-
-  const owner = profile?.repo?.owner;
-  const name = profile?.repo?.name;
-  if (!owner || !name) {
-    add(checks, "server", "server_rules", "unknown", "repo.owner and repo.name are not set in .agit/profile.yml");
-    return;
-  }
-
-  const slug = `${owner}/${name}`;
-  const branch = profile.repo.default_branch;
-
-  const rulesetTypes = new Set();
-  const listRaw = await gh(["api", `repos/${slug}/rulesets`]);
-  if (listRaw) {
-    let rulesets = [];
-    try {
-      rulesets = JSON.parse(listRaw);
-    } catch {
-      rulesets = [];
-    }
-    for (const ruleset of rulesets) {
-      if (ruleset?.target !== "branch" || ruleset?.enforcement !== "active") {
-        continue;
-      }
-      const detailRaw = await gh(["api", `repos/${slug}/rulesets/${ruleset.id}`]);
-      if (!detailRaw) {
-        continue;
-      }
-      try {
-        for (const rule of JSON.parse(detailRaw).rules ?? []) {
-          rulesetTypes.add(rule.type);
-        }
-      } catch {
-        // ignore an unreadable ruleset
-      }
-    }
-  }
-
-  const classic = await gh(["api", `repos/${slug}/branches/${branch}/protection`]);
-  const hasPr = rulesetTypes.has("pull_request");
-  const hasNoForce = rulesetTypes.has("non_fast_forward");
-
-  if (hasPr && hasNoForce) {
-    add(checks, "server", "server_rules", "ok", `Ruleset protects ${branch}: pull request required, force-push blocked`);
-  } else if (classic) {
-    add(checks, "server", "server_rules", "ok", `Classic branch protection is enabled on ${branch}`);
-  } else if (rulesetTypes.size > 0) {
-    const missing = [!hasPr ? "pull_request" : null, !hasNoForce ? "non_fast_forward" : null].filter(Boolean);
-    add(checks, "server", "server_rules", "warn", `Ruleset exists but is missing: ${missing.join(", ")}. Run agit protect`);
-  } else {
-    add(
-      checks,
-      "server",
-      "server_rules",
-      "warn",
-      `No server-side protection on ${branch}. An agent can still push there. Run agit protect`,
-    );
-  }
-
-  const repoRaw = await gh(["api", `repos/${slug}`]);
-  if (!repoRaw) {
-    add(checks, "server", "secret_push_protection", "unknown", "Cannot read repository settings");
-    return;
-  }
-  let status = null;
-  try {
-    status = JSON.parse(repoRaw).security_and_analysis?.secret_scanning_push_protection?.status ?? null;
-  } catch {
-    status = null;
-  }
-  add(
-    checks,
-    "server",
-    "secret_push_protection",
-    status === "enabled" ? "ok" : "warn",
-    status === "enabled"
-      ? "Secret scanning push protection is enabled"
-      : "Secret scanning push protection is not enabled; agit only scans locally",
-  );
 }
 
 function checkGuard(checks, cwd, vendor, id, scriptRelative, hookCommand, describe) {
@@ -481,13 +396,14 @@ export async function doctorCommand(cwd, { fix = false } = {}) {
   if (repo) {
     await checkGitLayer(checks, cwd, profile);
     const isolation = profile ? await inspectIsolation(cwd, profile) : null;
+    const sandbox = profile ? sandboxOf(profile) : "off";
     if (!isolation) {
       add(
         checks,
         "credential",
         "credential_boundary",
         "warn",
-        "Cannot check the local mirror until agit is initialized. Run agit isolate",
+        "Cannot check origin until agit is initialized.",
       );
     } else if (isolation.isolated) {
       add(
@@ -505,13 +421,21 @@ export async function doctorCommand(cwd, { fix = false } = {}) {
         "warn",
         "This clone is marked isolated, but origin does not point at .agit/mirror.git. Run agit isolate",
       );
-    } else {
+    } else if (sandbox === "agents") {
       add(
         checks,
         "credential",
         "credential_boundary",
         "warn",
-        "origin still points at the real remote. git push origin uses your credential. Run agit isolate",
+        "sandbox=agents requires origin to be the local mirror. agit start enables it; or run agit isolate",
+      );
+    } else {
+      add(
+        checks,
+        "credential",
+        "credential_boundary",
+        "ok",
+        "origin points at the real remote (default). Isolation is only needed with --sandbox",
       );
     }
     await checkSandboxLayer(checks, cwd, { store, profile, isolation });

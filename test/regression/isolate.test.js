@@ -140,11 +140,12 @@ describe("regression: local mirror", () => {
     assert.equal(await getConfig(work, "agit.isolate"), null);
   });
 
-  test("doctor reports the mirror as layer 4", async () => {
+  test("doctor treats isolation as optional unless sandbox is on", async () => {
     const { work } = await readyRepo();
 
     const before = await doctorCommand(work);
-    assert.equal(before.checks.find((check) => check.id === "credential_boundary").status, "warn");
+    assert.equal(before.checks.find((check) => check.id === "credential_boundary").status, "ok");
+    assert.match(before.checks.find((check) => check.id === "credential_boundary").message, /real remote/);
 
     await isolateCommand(work);
     const after = await doctorCommand(work);

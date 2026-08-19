@@ -191,7 +191,7 @@ export async function initCommand(cwd, options = {}, { npmInstall = defaultNpmIn
       hook?.backup ? `Backed up your previous pre-push hook to ${hook.backup}` : null,
       sandbox === "agents"
         ? "workflow.sandbox is agents: agit start writes agent sandbox configs and isolates the clone."
-        : "Next: agit protect (server-side rules), agit isolate (local mirror), then agit start <task-id>",
+        : "Next: agit start <task-id>",
     ]
       .filter(Boolean)
       .join("\n"),

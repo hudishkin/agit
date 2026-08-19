@@ -13,7 +13,6 @@ import { installHooksCommand } from "./commands/hooks.js";
 import { initCommand } from "./commands/init.js";
 import { isolateCommand } from "./commands/isolate.js";
 import { promptCommand } from "./commands/prompt.js";
-import { protectCommand } from "./commands/protect.js";
 import { pruneCommand } from "./commands/prune.js";
 import { startCommand } from "./commands/start.js";
 import { statusCommand } from "./commands/status.js";
@@ -177,7 +176,7 @@ export function createProgram() {
   applyOutputOptions(
     program
       .command("doctor")
-      .description("Report which protection layers are actually active")
+      .description("Report environment, hooks, and sandbox status")
       .option("--fix", "Install missing hooks and agent guards")
       .action(async (opts, command) => {
         await runCommand("doctor", command, () =>
@@ -216,16 +215,6 @@ export function createProgram() {
         await runCommand("install-agent-guards", command, () =>
           installAgentGuardsCommand(cwdFrom(command), opts),
         );
-      }),
-  );
-
-  applyOutputOptions(
-    program
-      .command("protect")
-      .description("Show or apply the GitHub ruleset that agents cannot bypass")
-      .option("--apply", "Create the ruleset instead of printing it")
-      .action(async (opts, command) => {
-        await runCommand("protect", command, () => protectCommand(cwdFrom(command), opts));
       }),
   );
 

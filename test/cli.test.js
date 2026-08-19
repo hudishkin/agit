@@ -35,4 +35,11 @@ describe("agit cli", () => {
     assert.equal(result.status, 0);
     assert.equal(result.stdout, `${pkg.version}\n`);
   });
+
+  test("protect is not a command", () => {
+    const result = runAgit(["protect"]);
+
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stderr}${result.stdout}`, /unknown command 'protect'/);
+  });
 });

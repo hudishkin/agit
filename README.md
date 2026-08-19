@@ -102,7 +102,7 @@ Publishing — push, PR, CI, review, shared history — is a shared side effect.
 4. Local checks run.
 5. The branch is pushed.
 6. A draft PR is created or updated.
-7. A human reviews and merges. GitHub rulesets stay the server-side boundary.
+7. A human reviews and merges.
 
 ## Who this is for
 
@@ -116,25 +116,21 @@ Hooks are first-class for **Cursor** and **Claude Code**. Other agents can still
 
 **git worktree.** Worktrees isolate a working tree. Agit is the lifecycle around them: task, branch, status, checks, publish handoff, draft PR.
 
-**Branch protection.** Rulesets control what GitHub accepts. Agit controls how local agent work reaches that boundary. They are complementary.
+**Branch protection.** GitHub/GitLab rulesets control what the host accepts. Agit does not create or manage them. Configure them on the host if you want that boundary.
 
 **Cursor / Claude permissions.** Use them. Agit uses native guards where it can and adds one workflow above them: `task → worktree → local work → finish → PR`.
 
 ## Keeping the workflow predictable
 
-`agit doctor` reports which layers are actually on.
+`agit doctor` reports what is actually on.
 
-1. **GitHub ruleset** — blocks push to the default branch, force-push, and unreviewed merges. `agit protect --apply`. The only layer a local agent cannot bypass.
-2. **Agent guards** — Cursor `beforeShellExecution` and Claude Code `PreToolUse` call `agit guard`. In the default workflow, direct publishing is discouraged. In `protocol`, git mutations are redirected to agit.
-3. **pre-push hook** — a raw `git push` fails unless `agit finish` issued a one-use token. Works alongside husky.
-4. **Local mirror (optional)** — `agit isolate` points this clone's `origin` at `.agit/mirror.git`. Everyday `git push` stays local. Undo with `agit isolate --undo`.
-5. **Agent OS sandbox (opt-in)** — `agit start --sandbox` (or `agit init --sandbox`) sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs, points origin at the local mirror, and locks git credentials in the task worktree. No in-repo init: `AGIT_STORE=home npx agit start TASK --sandbox`. `agit finish` still pushes with host credentials from the main checkout. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. Cursor can still read `~/.ssh`; `GH_TOKEN` in your shell is for finish, not for the agent worktree.
+1. **Agent guards** — Cursor `beforeShellExecution` and Claude Code `PreToolUse` call `agit guard`. In the default workflow, direct publishing is discouraged. In `protocol`, git mutations are redirected to agit.
+2. **pre-push hook** — a raw `git push` fails unless `agit finish` issued a one-use token. Works alongside husky.
+3. **Agent OS sandbox (opt-in)** — `agit start --sandbox` (or `agit init --sandbox`) sets `workflow.sandbox: agents`. `agit start` writes Cursor, Claude Code, and Codex sandbox configs, points origin at a local mirror, and locks git credentials in the task worktree. No in-repo init: `AGIT_STORE=home npx agit start TASK --sandbox`. `agit finish` still pushes with host credentials from the main checkout. `agit doctor` probes the OS runtime, then the files. Fail-closed: missing runtime or `insecure_none` / `danger-full-access` is a failure. Cursor can still read `~/.ssh`; `GH_TOKEN` in your shell is for finish, not for the agent worktree. Undo the mirror with `agit isolate --undo`.
 
 `finish` never force-pushes. On conflict or rewritten history, it stops.
 
 ```bash
-agit protect --apply    # GitHub ruleset; needs admin
-agit isolate            # optional; start does this when workflow.sandbox is agents
 agit doctor             # confirm what is actually active
 ```
 
@@ -158,10 +154,9 @@ agit abort <task-id>        Drop a local task and its branch
 agit done <task-id>         Remove the worktree after the PR is merged
 agit prune                  List stale worktrees (dry-run)
 agit prune --apply          Delete stale worktrees and local branches
-agit doctor                 Report which protection layers are active
+agit doctor                 Report environment, hooks, and sandbox status
 agit doctor --fix           Reinstall the pre-push hook and agent guards
-agit protect [--apply]      Show or create the GitHub ruleset
-agit isolate [--undo]       Point this clone's origin at a local mirror
+agit isolate [--undo]       Point this clone's origin at a local mirror (sandbox)
 agit prompt <task-id>       Copy-paste prompt for an agent
 agit install-hooks          Install the pre-push hook
 agit install-agent-guards   Install the Cursor and Claude tool-call guards
