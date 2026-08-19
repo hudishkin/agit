@@ -12,6 +12,7 @@ import { isolateCommand } from "../src/commands/isolate.js";
 import { startCommand } from "../src/commands/start.js";
 import { hookPath } from "../src/hooks.js";
 import { loadProfile, saveProfile } from "../src/profile.js";
+import { getConfig } from "../src/git.js";
 import { createGitRepo, gitRun } from "./helpers/git-harness.js";
 
 const bin = join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "agit.js");
@@ -84,7 +85,7 @@ describe("doctor", () => {
     const result = await doctorCommand(created.work);
     const stale = result.checks.find((check) => check.id === "stale_tasks");
     assert.equal(stale.status, "warn");
-    assert.match(stale.message, /agit prune/);
+    assert.match(stale.message, /agit done --stale/);
   });
 
   test("warns about a foreign agit file", async () => {
@@ -110,6 +111,20 @@ describe("doctor", () => {
     assert.equal(existsSync(path), true);
     assert.equal(result.checks.find((check) => check.id === "pre_push_hook").status, "ok");
     assert.equal(result.checks.find((check) => check.id === "fix").status, "ok");
+  });
+
+  test("doctor --undo-isolate restores origin", async () => {
+    const created = createGitRepo();
+    repos.push(created);
+    await initCommand(created.work, { yes: true, install: false });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+    await isolateCommand(created.work);
+
+    const result = await doctorCommand(created.work, { undoIsolate: true });
+    assert.equal(result.checks.find((check) => check.id === "undo_isolate").status, "ok");
+    assert.equal(await getConfig(created.work, "agit.isolate"), null);
+    assert.match(result.checks.find((check) => check.id === "credential_boundary").message, /real remote/);
   });
 
   test("CLI doctor --json returns checks", async () => {

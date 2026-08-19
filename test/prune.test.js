@@ -48,7 +48,7 @@ describe("prune", () => {
     assert.equal(result.candidates[0].reason, "aborted");
     assert.equal(loadTask(work, "AUTH-123").status, "aborted");
     assert.equal(existsSync(started.path), false);
-    assert.match(result.message, /agit prune --apply/);
+    assert.match(result.message, /agit done --stale --apply/);
   });
 
   test("apply removes aborted task metadata", async () => {

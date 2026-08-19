@@ -25,6 +25,7 @@ import {
   sandboxRoots,
 } from "../sandbox.js";
 import { installAgentGuardsCommand } from "./guards.js";
+import { isolateCommand } from "./isolate.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -212,7 +213,7 @@ function checkGuard(checks, cwd, vendor, id, scriptRelative, hookCommand, descri
   const { exists, config } = readGuardConfig(cwd, vendor);
 
   if (!exists) {
-    add(checks, "agent", id, "warn", `${describe} is not configured. Run agit install-agent-guards`);
+    add(checks, "agent", id, "warn", `${describe} is not configured. Run agit doctor --fix`);
     return;
   }
 
@@ -264,7 +265,7 @@ async function checkGitLayer(checks, cwd, profile) {
       "git",
       "pre_push_hook",
       "warn",
-      `No agit pre-push hook at ${path}. Run agit install-hooks`,
+      `No agit pre-push hook at ${path}. Run agit doctor --fix`,
     );
     return;
   }
@@ -277,7 +278,7 @@ async function checkGitLayer(checks, cwd, profile) {
       "git",
       "pre_push_hook",
       "warn",
-      `The pre-push hook does not protect ${branch}. Run agit install-hooks to regenerate it`,
+      `The pre-push hook does not protect ${branch}. Run agit doctor --fix to regenerate it`,
     );
     return;
   }
@@ -308,7 +309,7 @@ async function checkSandboxLayer(checks, cwd, { store, profile, isolation }) {
 
   add(checks, "sandbox", "sandbox_isolate", isolation?.isolated ? "ok" : "fail", isolation?.isolated
     ? "origin is the local mirror"
-    : "sandbox=agents requires origin to be the local mirror. agit start enables it; or run agit isolate");
+    : "sandbox=agents requires origin to be the local mirror. agit start enables it");
 
   const hostPat = inspectHostPublishEnv();
   add(checks, "sandbox", hostPat.id, hostPat.status, hostPat.message);
@@ -362,9 +363,25 @@ async function checkSandboxLayer(checks, cwd, { store, profile, isolation }) {
   }
 }
 
-export async function doctorCommand(cwd, { fix = false } = {}) {
+export async function doctorCommand(cwd, { fix = false, undoIsolate = false } = {}) {
   const checks = [];
   const { repo, profile, store } = await checkEnvironment(checks, cwd);
+
+  let isolationUndo = null;
+  if (undoIsolate) {
+    if (!repo || !profile) {
+      add(
+        checks,
+        "environment",
+        "undo_isolate",
+        "fail",
+        "Cannot restore origin until this directory is a Git repo with agit init",
+      );
+    } else {
+      isolationUndo = await isolateCommand(cwd, { undo: true });
+      add(checks, "environment", "undo_isolate", "ok", isolationUndo.message.split("\n")[0]);
+    }
+  }
 
   let fixed = null;
   if (fix) {
@@ -419,7 +436,7 @@ export async function doctorCommand(cwd, { fix = false } = {}) {
         "credential",
         "credential_boundary",
         "warn",
-        "This clone is marked isolated, but origin does not point at .agit/mirror.git. Run agit isolate",
+        "This clone is marked isolated, but origin does not point at .agit/mirror.git. Run agit start --sandbox to restore the mirror, or agit doctor --undo-isolate to drop isolation",
       );
     } else if (sandbox === "agents") {
       add(
@@ -427,7 +444,7 @@ export async function doctorCommand(cwd, { fix = false } = {}) {
         "credential",
         "credential_boundary",
         "warn",
-        "sandbox=agents requires origin to be the local mirror. agit start enables it; or run agit isolate",
+        "sandbox=agents requires origin to be the local mirror. agit start enables it",
       );
     } else {
       add(
@@ -458,6 +475,7 @@ export async function doctorCommand(cwd, { fix = false } = {}) {
     ok: !failed,
     checks,
     fixed,
+    isolation_undo: isolationUndo,
     message: lines.join("\n"),
   };
 }
