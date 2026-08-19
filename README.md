@@ -76,7 +76,7 @@ cp AGIT.md ~/.claude/skills/agit/SKILL.md
 
 From a published install: `cp "$(npm root -g)/@hudishkin/agit/AGIT.md" ~/.cursor/skills/agit/SKILL.md`.
 
-The skill tells the agent to use `npx @hudishkin/agit` and the home store, so the working tree stays clean. A human still runs `agit finish`.
+The skill tells the agent to use `npx @hudishkin/agit` and the home store, so the working tree stays clean. When the work is done, the agent asks whether to finish; if you say yes, you run `agit finish`.
 
 ## Why this workflow
 
@@ -220,7 +220,7 @@ These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `a
 
 ## Advanced workflows
 
-New clones default to **remote**: the agent works with local git; a human runs `agit finish`.
+New clones default to **remote**: the agent works with local git and asks whether to finish; you run `agit finish`.
 
 `agit init --yes --mode protocol` keeps the older loop, where the agent also runs `agit commit` and `agit finish`.
 

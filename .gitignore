@@ -6,3 +6,5 @@ docs/
 .agit/logs/
 .agit/mirror.git/
 .agit/worktrees/
+.agit/profile.yml
+.agit/setup-agent.sh

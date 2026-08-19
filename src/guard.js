@@ -29,7 +29,7 @@ const GIT_HINTS = {
 
 const MUTATING_GIT = new Set(Object.keys(GIT_HINTS));
 
-const REMOTE_PUSH_HINT = "A human publishes with agit finish <task-id>.";
+const REMOTE_PUSH_HINT = "Ask the user whether to finish. If they say yes, they run agit finish <task-id>.";
 const REMOTE_FOOTER = "Local git is allowed. Do not push or create pull requests.";
 const PROTOCOL_FOOTER = "Read-only git is allowed: git status, git diff, git log.";
 
@@ -267,7 +267,7 @@ function classifyGit(tokens, gitIndex, enforcement, isolated) {
   if (name === "config" && isolated && readsPushUrl(args)) {
     return denial(
       "The publish URL is not visible to the agent.",
-      "A human publishes with agit finish <task-id>.",
+      "Ask the user whether to finish. If they say yes, they run agit finish <task-id>.",
     );
   }
 

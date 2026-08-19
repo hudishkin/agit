@@ -98,7 +98,7 @@ describe("start", () => {
     assert.equal(loadTask(work, "AUTH-123").status, "started");
     assert.equal(loadTask(work, "AUTH-123").worktree, ".agit/worktrees/AUTH-123");
     assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
-    assert.match(result.message, /A human publishes/);
+    assert.match(result.message, /ask the user whether to finish/);
     assert.match(result.message, /Work in:/);
     assert.doesNotMatch(result.message, /agit commit -m/);
   });

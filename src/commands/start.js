@@ -33,7 +33,7 @@ function nextHint(taskId, enforcement, path, sandbox = "off") {
       work,
       sandboxLine,
       `Work with local git. Do not push.`,
-      `A human publishes with:`,
+      `When the work is done, ask the user whether to finish. If they say yes, they run:`,
       `  agit finish ${taskId}`,
     ]
       .filter(Boolean)
