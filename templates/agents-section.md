@@ -30,7 +30,7 @@ Do not run `git worktree`. `agit start` already created the task directory.
 | see where you are | `agit status` |
 | drop an unpublished task | `agit abort <task-id>` |
 | land a task on its base branch | `agit done <task-id> --merge` |
-| remove a merged task | `agit done <task-id>` |
+| remove a merged or no-PR published task | `agit done <task-id>` |
 | remove stale worktrees | `agit done --stale` then `agit done --stale --apply` |
 
 `agit finish` pushes and opens a draft PR. Running it again after review fixes updates the same PR. A human reviews and merges. After merge, `agit done <task-id>` removes the local worktree.

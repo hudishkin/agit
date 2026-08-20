@@ -20,7 +20,9 @@ export async function abortCommand(cwd, taskId) {
     if (task.publish?.pushed || task.status === "pr_created" || task.status === "pushed") {
       throw new TaskStateError(
         `Task ${taskId} was already published.`,
-        "Close the pull request yourself. agit abort will not delete a remote branch.",
+        task.publish?.pr_url
+          ? "Close the pull request yourself. agit abort will not delete a remote branch."
+          : `Run agit done ${taskId} to remove the local worktree. The remote branch is left in place.`,
       );
     }
 

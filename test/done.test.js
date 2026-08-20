@@ -9,6 +9,7 @@ import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { DirtyTree, PublishFailed, TaskStateError } from "../src/errors.js";
 import { branchExists, currentBranch } from "../src/git.js";
+import { loadProfile, saveProfile } from "../src/profile.js";
 import { loadTask, taskExists } from "../src/taskstore.js";
 import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
 
@@ -141,8 +142,8 @@ describe("done", () => {
     assert.equal(await branchExists(work, "agit/AUTH-123"), true);
   });
 
-  test("refuses a pushed task that never got a PR", async () => {
-    const { work } = await readyRepo();
+  test("removes a pushed task that never got a PR and does not touch remote", async () => {
+    const { work, origin } = await readyRepo();
     await startCommand(work, "AUTH-123");
     const tree = taskWork(work, "AUTH-123");
     writeFileSync(join(tree, "note.txt"), "ok\n");
@@ -157,8 +158,38 @@ describe("done", () => {
       PublishFailed,
     );
 
-    await assert.rejects(() => doneCommand(work, "AUTH-123"), /without a pull request/);
-    assert.equal(loadTask(work, "AUTH-123").status, "pushed");
+    const result = await doneCommand(work, "AUTH-123");
+
+    assert.equal(result.status, "done");
+    assert.equal(result.pr_url, null);
+    assert.equal(existsSync(tree), false);
+    assert.equal(taskExists(work, "AUTH-123"), false);
+    assert.equal(await branchExists(work, "agit/AUTH-123"), false);
+    assert.match(gitRun(origin, ["branch"]), /AUTH-123/);
+  });
+
+  test("removes a task pushed with pr.provider none", async () => {
+    const { work, origin } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+    const profile = loadProfile(work);
+    profile.pr.provider = "none";
+    saveProfile(work, profile);
+    const tree = taskWork(work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+    await finishCommand(work, "AUTH-123", {
+      createPr: async () => {
+        throw new Error("should not open a PR");
+      },
+    });
+
+    const result = await doneCommand(work, "AUTH-123");
+
+    assert.equal(result.status, "done");
+    assert.equal(existsSync(tree), false);
+    assert.equal(taskExists(work, "AUTH-123"), false);
+    assert.equal(await branchExists(work, "agit/AUTH-123"), false);
+    assert.match(gitRun(origin, ["branch"]), /AUTH-123/);
   });
 });
 
@@ -237,6 +268,35 @@ describe("done --merge", () => {
     const { work, tree } = await publishedTask();
 
     await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: true }), /already published/);
+    assert.equal(existsSync(tree), true);
+    assert.equal(taskExists(work, "AUTH-123"), true);
+  });
+
+  test("refuses --merge after a push with no PR and hints agit done", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+    const tree = taskWork(work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+    await assert.rejects(
+      () =>
+        finishCommand(work, "AUTH-123", {
+          createPr: async () => {
+            throw new PublishFailed("Checks passed, but remote publish failed.");
+          },
+        }),
+      PublishFailed,
+    );
+
+    await assert.rejects(
+      () => doneCommand(work, "AUTH-123", { merge: true }),
+      (error) => {
+        assert.match(error.message, /already published/);
+        assert.match(error.hint, /agit done AUTH-123/);
+        assert.doesNotMatch(error.hint, /pull request on the host/);
+        return true;
+      },
+    );
     assert.equal(existsSync(tree), true);
     assert.equal(taskExists(work, "AUTH-123"), true);
   });

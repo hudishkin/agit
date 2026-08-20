@@ -7,7 +7,7 @@ import { commitCommand } from "../src/commands/commit.js";
 import { finishCommand } from "../src/commands/finish.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { DirtyTree, TaskStateError } from "../src/errors.js";
+import { DirtyTree, PublishFailed, TaskStateError } from "../src/errors.js";
 import { branchExists, currentBranch } from "../src/git.js";
 import { loadTask } from "../src/taskstore.js";
 import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
@@ -69,6 +69,33 @@ describe("abort", () => {
     });
 
     await assert.rejects(() => abortCommand(work, "AUTH-123"), TaskStateError);
+  });
+
+  test("hints agit done when aborting a pushed task with no PR", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+    const tree = taskWork(work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+    await assert.rejects(
+      () =>
+        finishCommand(work, "AUTH-123", {
+          createPr: async () => {
+            throw new PublishFailed("Checks passed, but remote publish failed.");
+          },
+        }),
+      PublishFailed,
+    );
+
+    await assert.rejects(
+      () => abortCommand(work, "AUTH-123"),
+      (error) => {
+        assert.match(error.message, /already published/);
+        assert.match(error.hint, /agit done AUTH-123/);
+        return true;
+      },
+    );
+    assert.equal(await branchExists(work, "agit/AUTH-123"), true);
   });
 
   test("aborts when the worktree directory is already gone", async () => {

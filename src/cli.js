@@ -167,7 +167,7 @@ export function createProgram() {
   applyOutputOptions(
     program
       .command("done")
-      .description("Remove a local task worktree after its PR is merged, or merge it into the base branch")
+      .description("Remove a local task worktree after merge or a no-PR push, or merge it into the base branch")
       .argument("[task-id]", "Task id, for example AUTH-123")
       .option("--merge", "Merge the task branch into the branch it started from, then remove it")
       .option("--stale", "List stale local tasks instead of a single merged task")
