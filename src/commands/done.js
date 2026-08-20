@@ -15,6 +15,7 @@ import { inspectMergeRequest } from "../prhost.js";
 import { resolveTaskTree } from "../root.js";
 import { loadWorkspace } from "../store.js";
 import { assertTaskId, deleteTask, loadTask, taskExists } from "../taskstore.js";
+import { commitIfDirty } from "./commit.js";
 
 export function doneHint(taskId) {
   return `PR merged. Run: agit done ${taskId}`;
@@ -78,8 +79,8 @@ async function mergeAndDone(store, root, profile, task, cwd) {
   }
 
   const tree = resolveTaskTree(store, task, cwd);
-  if (existsSync(tree) && tree !== root && !(await isClean(tree))) {
-    throw new DirtyTree("Working tree is not clean.");
+  if (existsSync(tree) && tree !== root) {
+    await commitIfDirty(tree, task.task_id);
   }
   if (!(await isClean(root))) {
     throw new DirtyTree(

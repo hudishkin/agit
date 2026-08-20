@@ -1,6 +1,6 @@
 import { findDeniedFiles } from "../denylist.js";
-import { DenylistHit, EmptyCommit, WrongBranch } from "../errors.js";
-import { add, commit, currentBranch, listCommitCandidates } from "../git.js";
+import { DenylistHit, DirtyTree, EmptyCommit, WrongBranch } from "../errors.js";
+import { add, commit, currentBranch, isClean, listCommitCandidates } from "../git.js";
 import { loadWorkspace } from "../store.js";
 import { scanFilesForSecrets } from "../secretscan.js";
 import { loadTask, saveTask, taskExists } from "../taskstore.js";
@@ -97,4 +97,24 @@ export async function commitCommand(cwd, message, { files: requested } = {}) {
     commit: hash,
     message: `Committed ${hash.slice(0, 7)}\nFiles:\n${files.map((file) => `- ${file}`).join("\n")}`,
   };
+}
+
+export function pendingCommitMessage(taskId, files) {
+  if (files.length === 1) {
+    return `${taskId}: update ${files[0]}`;
+  }
+  return `${taskId}: update ${files.length} files`;
+}
+
+export async function commitIfDirty(cwd, taskId) {
+  if (await isClean(cwd)) {
+    return null;
+  }
+
+  const files = await listCommitCandidates(cwd);
+  if (files.length === 0) {
+    throw new DirtyTree("Working tree is not clean.");
+  }
+
+  return commitCommand(cwd, pendingCommitMessage(taskId, files), { files });
 }

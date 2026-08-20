@@ -241,14 +241,17 @@ describe("done --merge", () => {
     assert.equal(await branchExists(work, "agit/AUTH-123"), false);
   });
 
-  test("refuses a dirty task worktree", async () => {
+  test("commits a dirty task worktree then merges", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "AUTH-123");
     writeFileSync(join(taskWork(work, "AUTH-123"), "note.txt"), "dirty\n");
 
-    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: true }), DirtyTree);
-    assert.equal(await branchExists(work, "agit/AUTH-123"), true);
-    assert.equal(taskExists(work, "AUTH-123"), true);
+    const result = await doneCommand(work, "AUTH-123", { merge: true });
+
+    assert.equal(result.status, "done");
+    assert.equal(readFileSync(join(work, "note.txt"), "utf8"), "dirty\n");
+    assert.equal(await branchExists(work, "agit/AUTH-123"), false);
+    assert.equal(taskExists(work, "AUTH-123"), false);
   });
 
   test("refuses a dirty main checkout", async () => {

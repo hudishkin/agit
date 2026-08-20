@@ -146,7 +146,7 @@ agit start --sandbox        Enable agent sandboxes without re-running init
 agit start --title --body --issue
                             Store PR title, body, and a GitHub issue
 agit edit                   Open this project's profile.yml
-agit finish <task-id>       Checks → push → draft PR
+agit finish <task-id>       Commit pending → checks → push → draft PR
 agit finish --squash        Squash commits before the first push
 agit finish --no-rebase     Skip rebase onto the default branch before the first push
 agit status [task-id]       Task state
@@ -200,7 +200,7 @@ These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `a
 
 ## End-to-end
 
-**One agent, one PR.** `agit start AUTH-123 --title "Fix login" --issue 12`. Work in the printed path. Commit there. A human runs `agit finish AUTH-123`. Checks run, the branch is pushed, a draft PR opens with that title and `Closes #12`.
+**One agent, one PR.** `agit start AUTH-123 --title "Fix login" --issue 12`. Work in the printed path. A human runs `agit finish AUTH-123`. Pending changes in the task worktree are committed first. Checks run, the branch is pushed, a draft PR opens with that title and `Closes #12`.
 
 **Two agents in parallel.** `agit start AUTH-123` and `agit start TESTS-124`. Each worktree has its own dirty tree. `agit status --all` shows both. `agit finish` from the main checkout publishes one task.
 
