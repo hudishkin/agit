@@ -14,6 +14,8 @@ import {
   isClean,
   isRepo,
   listCommitCandidates,
+  localBranchFromRef,
+  mergeBranch,
   push,
   remoteUrl,
 } from "../src/git.js";
@@ -61,6 +63,44 @@ describe("git", () => {
 
     await createBranch(work, "agit/AUTH-123", "main");
     assert.equal(await currentBranch(work), "agit/AUTH-123");
+  });
+
+  test("localBranchFromRef strips origin prefixes", () => {
+    assert.equal(localBranchFromRef("origin/main"), "main");
+    assert.equal(localBranchFromRef("refs/remotes/origin/main"), "main");
+    assert.equal(localBranchFromRef("refs/heads/main"), "main");
+    assert.equal(localBranchFromRef("main"), "main");
+    assert.equal(localBranchFromRef(null), null);
+  });
+
+  test("mergeBranch fast-forwards and reports conflicts", async () => {
+    const { work } = repo();
+
+    await createBranch(work, "agit/AUTH-123", "main");
+    writeFileSync(join(work, "note.txt"), "task\n");
+    gitRun(work, ["add", "note.txt"]);
+    gitRun(work, ["commit", "-m", "task note"]);
+
+    gitRun(work, ["checkout", "main"]);
+    const ff = await mergeBranch(work, "agit/AUTH-123");
+    assert.equal(ff.ok, true);
+    assert.equal(readFileSync(join(work, "note.txt"), "utf8"), "task\n");
+
+    gitRun(work, ["reset", "--hard", "HEAD~1"]);
+    writeFileSync(join(work, "note.txt"), "main\n");
+    gitRun(work, ["add", "note.txt"]);
+    gitRun(work, ["commit", "-m", "main note"]);
+    gitRun(work, ["checkout", "agit/AUTH-123"]);
+    writeFileSync(join(work, "note.txt"), "other\n");
+    gitRun(work, ["add", "note.txt"]);
+    gitRun(work, ["commit", "-m", "other note"]);
+    gitRun(work, ["checkout", "main"]);
+
+    const conflicted = await mergeBranch(work, "agit/AUTH-123");
+    assert.equal(conflicted.ok, false);
+    assert.deepEqual(conflicted.files, ["note.txt"]);
+    assert.equal(await isClean(work), true);
+    assert.equal(readFileSync(join(work, "note.txt"), "utf8"), "main\n");
   });
 
   test("commit records a hash without pushing", async () => {

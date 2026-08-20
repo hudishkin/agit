@@ -283,6 +283,31 @@ export async function rebaseAbort(cwd) {
   await runGit(cwd, ["rebase", "--abort"], { allowFail: true });
 }
 
+export function localBranchFromRef(ref) {
+  if (!ref) {
+    return null;
+  }
+  return String(ref)
+    .replace(/^refs\/heads\//, "")
+    .replace(/^refs\/remotes\/origin\//, "")
+    .replace(/^origin\//, "");
+}
+
+export async function mergeAbort(cwd) {
+  await runGit(cwd, ["merge", "--abort"], { allowFail: true });
+}
+
+export async function mergeBranch(cwd, branch) {
+  try {
+    await runGit(cwd, ["merge", "--no-edit", branch]);
+    return { ok: true, files: [] };
+  } catch (error) {
+    const files = await conflictedFiles(cwd);
+    await mergeAbort(cwd);
+    return { ok: false, files, error: error.message };
+  }
+}
+
 export async function rebaseOnto(cwd, upstream) {
   try {
     await runGit(cwd, ["rebase", upstream]);

@@ -153,6 +153,7 @@ agit status [task-id]       Task state
 agit status --all           Every task: path, age, dirty, PR
 agit abort <task-id>        Drop a local task and its branch
 agit done <task-id>         Remove the worktree after the PR is merged
+agit done <task-id> --merge Merge the task branch into its base, then remove it
 agit done --stale           List stale worktrees (dry-run)
 agit done --stale --apply   Delete stale worktrees and local branches
 agit doctor                 Report environment, hooks, and sandbox status

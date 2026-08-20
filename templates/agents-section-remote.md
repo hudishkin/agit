@@ -27,6 +27,8 @@ On the first start in a project, ask how publishing should work (default: always
 
 After the PR is merged, a human runs `agit done <task-id>` to remove the local worktree.
 
+To land a task locally instead of opening a PR, run `agit done <task-id> --merge`. That merges the task branch into the branch it started from, then deletes the work branch.
+
 If `agit` is not on PATH, use `npx agit`.
 
 This file is a hint. Tool-call guards block publish commands before the shell runs them.
