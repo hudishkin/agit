@@ -64,12 +64,20 @@ describe("agit cli", () => {
     assert.doesNotMatch(result.stdout, /guard-only/);
   });
 
-  test("done --help documents --stale", () => {
+  test("done --help documents --stale and --merge", () => {
     const result = runAgit(["done", "--help"]);
 
     assert.equal(result.status, 0);
     assert.match(result.stdout, /--stale/);
     assert.match(result.stdout, /--apply/);
+    assert.match(result.stdout, /--merge/);
+  });
+
+  test("done --merge --stale is rejected", () => {
+    const result = runAgit(["done", "AUTH-123", "--merge", "--stale"]);
+
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stderr}${result.stdout}`, /cannot be combined/);
   });
 
   test("doctor --help documents repair flags", () => {

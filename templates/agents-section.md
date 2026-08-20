@@ -29,6 +29,7 @@ Do not run `git worktree`. `agit start` already created the task directory.
 | publish review fixes | `agit commit ...` then `agit finish <task-id>` again |
 | see where you are | `agit status` |
 | drop an unpublished task | `agit abort <task-id>` |
+| land a task on its base branch | `agit done <task-id> --merge` |
 | remove a merged task | `agit done <task-id>` |
 | remove stale worktrees | `agit done --stale` then `agit done --stale --apply` |
 

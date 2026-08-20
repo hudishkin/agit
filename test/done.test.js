@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { commitCommand } from "../src/commands/commit.js";
@@ -7,7 +7,7 @@ import { doneCommand } from "../src/commands/done.js";
 import { finishCommand } from "../src/commands/finish.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { PublishFailed, TaskStateError } from "../src/errors.js";
+import { DirtyTree, PublishFailed, TaskStateError } from "../src/errors.js";
 import { branchExists, currentBranch } from "../src/git.js";
 import { loadTask, taskExists } from "../src/taskstore.js";
 import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
@@ -130,7 +130,14 @@ describe("done", () => {
     const { work } = await readyRepo();
     await startCommand(work, "AUTH-123");
 
-    await assert.rejects(() => doneCommand(work, "AUTH-123"), /was not published/);
+    await assert.rejects(
+      () => doneCommand(work, "AUTH-123"),
+      (error) => {
+        assert.match(error.message, /was not published/);
+        assert.match(error.hint, /done AUTH-123 --merge/);
+        return true;
+      },
+    );
     assert.equal(await branchExists(work, "agit/AUTH-123"), true);
   });
 
@@ -152,5 +159,106 @@ describe("done", () => {
 
     await assert.rejects(() => doneCommand(work, "AUTH-123"), /without a pull request/);
     assert.equal(loadTask(work, "AUTH-123").status, "pushed");
+  });
+});
+
+describe("done --merge", () => {
+  test("merges the task branch into the base and deletes it", async () => {
+    const created = await readyRepo();
+    await startCommand(created.work, "AUTH-123");
+    const tree = taskWork(created.work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+
+    const result = await doneCommand(created.work, "AUTH-123", { merge: true });
+
+    assert.equal(result.status, "done");
+    assert.equal(result.base, "main");
+    assert.equal(result.branch, "agit/AUTH-123");
+    assert.equal(existsSync(tree), false);
+    assert.equal(taskExists(created.work, "AUTH-123"), false);
+    assert.equal(await branchExists(created.work, "agit/AUTH-123"), false);
+    assert.equal(await currentBranch(created.work), "main");
+    assert.equal(readFileSync(join(created.work, "note.txt"), "utf8"), "ok\n");
+    assert.doesNotMatch(gitRun(created.origin, ["branch"]), /AUTH-123/);
+  });
+
+  test("merges an empty task and still removes the work branch", async () => {
+    const { work } = await readyRepo();
+    const started = await startCommand(work, "AUTH-123");
+
+    const result = await doneCommand(work, "AUTH-123", { merge: true });
+
+    assert.equal(result.status, "done");
+    assert.equal(existsSync(started.path), false);
+    assert.equal(await branchExists(work, "agit/AUTH-123"), false);
+    assert.equal(taskExists(work, "AUTH-123"), false);
+    assert.equal(await currentBranch(work), "main");
+  });
+
+  test("merges when the worktree directory is already gone", async () => {
+    const { work } = await readyRepo();
+    const started = await startCommand(work, "AUTH-123");
+    writeFileSync(join(started.path, "note.txt"), "ok\n");
+    await commitCommand(started.path, "AUTH-123: add note");
+    gitRun(work, ["worktree", "remove", "--force", started.path]);
+
+    const result = await doneCommand(work, "AUTH-123", { merge: true });
+
+    assert.equal(result.status, "done");
+    assert.equal(readFileSync(join(work, "note.txt"), "utf8"), "ok\n");
+    assert.equal(await branchExists(work, "agit/AUTH-123"), false);
+  });
+
+  test("refuses a dirty task worktree", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+    writeFileSync(join(taskWork(work, "AUTH-123"), "note.txt"), "dirty\n");
+
+    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: true }), DirtyTree);
+    assert.equal(await branchExists(work, "agit/AUTH-123"), true);
+    assert.equal(taskExists(work, "AUTH-123"), true);
+  });
+
+  test("refuses a dirty main checkout", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+    const tree = taskWork(work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+    writeFileSync(join(work, "README.md"), "dirty main\n");
+
+    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: true }), /main checkout is not clean/);
+    assert.equal(await branchExists(work, "agit/AUTH-123"), true);
+    assert.equal(taskExists(work, "AUTH-123"), true);
+  });
+
+  test("refuses a published task", async () => {
+    const { work, tree } = await publishedTask();
+
+    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: true }), /already published/);
+    assert.equal(existsSync(tree), true);
+    assert.equal(taskExists(work, "AUTH-123"), true);
+  });
+
+  test("refuses a merge conflict and leaves the task intact", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+    const tree = taskWork(work, "AUTH-123");
+
+    writeFileSync(join(work, "note.txt"), "from-main\n");
+    gitRun(work, ["add", "note.txt"]);
+    gitRun(work, ["commit", "-m", "main note"]);
+
+    writeFileSync(join(tree, "note.txt"), "from-task\n");
+    await commitCommand(tree, "AUTH-123: add note");
+
+    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: true }), /Could not merge/);
+    assert.equal(existsSync(tree), true);
+    assert.equal(taskExists(work, "AUTH-123"), true);
+    assert.equal(await branchExists(work, "agit/AUTH-123"), true);
+    assert.equal(await currentBranch(work), "main");
+    assert.equal(existsSync(join(work, "note.txt")), true);
+    assert.equal(readFileSync(join(work, "note.txt"), "utf8"), "from-main\n");
   });
 });
