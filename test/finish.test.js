@@ -9,7 +9,7 @@ import { commitCommand } from "../src/commands/commit.js";
 import { finishCommand } from "../src/commands/finish.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError } from "../src/errors.js";
+import { ChecksFailed, DenylistHit, DirtyTree, PublishFailed, TaskStateError } from "../src/errors.js";
 import { createDraftPr } from "../src/gh.js";
 import { createDraftMr } from "../src/prhost.js";
 import { currentBranch, isClean, logOneline } from "../src/git.js";
@@ -69,6 +69,34 @@ function fakeGhPath(url = "https://github.com/acme/backend/pull/9") {
 }
 
 describe("finish", () => {
+  test("commits pending task changes then publishes", async () => {
+    const created = repo();
+    await initCommand(created.work, { yes: true, install: false, checks: ["true"] });
+    gitRun(created.work, ["add", "-A"]);
+    gitRun(created.work, ["commit", "-m", "chore: init agit"]);
+    await startCommand(created.work, "AUTH-123");
+    const tree = taskWork(created.work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    const gh = fakePr();
+
+    const result = await finishCommand(created.work, "AUTH-123", gh);
+
+    assert.equal(result.status, "pr_created");
+    assert.match(gitRun(tree, ["log", "-1", "--pretty=%s"]), /AUTH-123: update note\.txt/);
+    assert.match(gitRun(created.origin, ["log", "agit/AUTH-123", "-1", "--pretty=%s"]), /note\.txt/);
+    assert.equal(gh.calls.length, 1);
+  });
+
+  test("does not auto-commit denied files on finish", async () => {
+    const { work, tree, origin } = await readyTask();
+    writeFileSync(join(tree, ".env"), "SECRET=1\n");
+    const gh = fakePr();
+
+    await assert.rejects(() => finishCommand(work, "AUTH-123", gh), DenylistHit);
+    assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
+    assert.equal(gh.calls.length, 0);
+  });
+
   test("does not push when checks dirty the tree", async () => {
     const { work, origin } = await readyTask({ checks: ["touch leftover.txt"] });
     const gh = fakePr();

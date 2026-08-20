@@ -142,7 +142,7 @@ export function createProgram() {
   applyOutputOptions(
     program
       .command("finish")
-      .description("Run checks, push, and open or update the draft PR or MR")
+      .description("Commit pending changes, run checks, push, and open or update the draft PR or MR")
       .argument("<task-id>", "Task id, for example AUTH-123")
       .option("--squash", "Squash commits before the first push")
       .option("--no-squash", "Do not squash")
@@ -167,9 +167,9 @@ export function createProgram() {
   applyOutputOptions(
     program
       .command("done")
-      .description("Remove a local task worktree after its PR is merged, or merge it into the base branch")
+      .description("Remove a local task worktree after merge or a no-PR push, or merge it into the base branch")
       .argument("[task-id]", "Task id, for example AUTH-123")
-      .option("--merge", "Merge the task branch into the branch it started from, then remove it")
+      .option("--merge", "Commit pending task changes, merge into the start branch, then remove it")
       .option("--stale", "List stale local tasks instead of a single merged task")
       .option("--apply", "With --stale, delete candidates instead of listing them")
       .action(async (taskId, opts, command) => {

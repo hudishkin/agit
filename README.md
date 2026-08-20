@@ -146,13 +146,13 @@ agit start --sandbox        Enable agent sandboxes without re-running init
 agit start --title --body --issue
                             Store PR title, body, and a GitHub issue
 agit edit                   Open this project's profile.yml
-agit finish <task-id>       Checks → push → draft PR
+agit finish <task-id>       Commit pending → checks → push → draft PR
 agit finish --squash        Squash commits before the first push
 agit finish --no-rebase     Skip rebase onto the default branch before the first push
 agit status [task-id]       Task state
 agit status --all           Every task: path, age, dirty, PR
 agit abort <task-id>        Drop a local task and its branch
-agit done <task-id>         Remove the worktree after the PR is merged
+agit done <task-id>         Remove the local worktree after merge, or after a push with no PR
 agit done <task-id> --merge Merge the task branch into its base, then remove it
 agit done --stale           List stale worktrees (dry-run)
 agit done --stale --apply   Delete stale worktrees and local branches
@@ -200,7 +200,7 @@ These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `a
 
 ## End-to-end
 
-**One agent, one PR.** `agit start AUTH-123 --title "Fix login" --issue 12`. Work in the printed path. Commit there. A human runs `agit finish AUTH-123`. Checks run, the branch is pushed, a draft PR opens with that title and `Closes #12`.
+**One agent, one PR.** `agit start AUTH-123 --title "Fix login" --issue 12`. Work in the printed path. A human runs `agit finish AUTH-123`. Pending changes in the task worktree are committed first. Checks run, the branch is pushed, a draft PR opens with that title and `Closes #12`.
 
 **Two agents in parallel.** `agit start AUTH-123` and `agit start TESTS-124`. Each worktree has its own dirty tree. `agit status --all` shows both. `agit finish` from the main checkout publishes one task.
 
@@ -210,10 +210,10 @@ These profile keys are reserved and unused: `one_push_policy`, `finish_mode`, `a
 
 - **Checks failed.** Read `.agit/logs/<task-id>-checks.log`, fix, run `agit finish` again.
 - **Branch diverged after publish.** agit never force-pushes. Reconcile locally or start a new task id.
-- **`gh` or `glab` missing or not logged in.** Push may have succeeded. Install and authenticate the CLI for `pr.provider`, then `agit finish` again to open the request. Or set `pr.provider: none` to skip that step.
-- **`abort` refuses.** The worktree is dirty, or the task was already published. Commit/restore, or close the PR yourself.
+- **`gh` or `glab` missing or not logged in.** Push may have succeeded. Install and authenticate the CLI for `pr.provider`, then `agit finish` again to open the request. Or set `pr.provider: none` to skip that step. To drop the local worktree without opening a PR, run `agit done <task-id>` — the remote branch is left in place.
+- **`abort` refuses.** The worktree is dirty, or the task was already published. Commit/restore, or run `agit done <task-id>` if it was pushed without a PR.
 - **PR merged.** Run `agit done <task-id>` to remove the local worktree. `finish` and `status` hint this once GitHub/GitLab report merged.
-- **Stale worktrees.** `agit abort` drops one unpublished task. `agit done` drops a merged one. `agit done --stale --apply` clears the rest.
+- **Stale worktrees.** `agit abort` drops one unpublished task. `agit done` drops a merged one, or one that was pushed with no PR. `agit done --stale --apply` clears the rest.
 
 ## agit vs git worktree vs worktrunk
 

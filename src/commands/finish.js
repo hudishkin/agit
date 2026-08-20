@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { readLogTail, runChecks } from "../checks.js";
 import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError, WrongBranch } from "../errors.js";
 import { inspectMergeRequest, openerFor, providerOf } from "../prhost.js";
+import { commitIfDirty } from "./commit.js";
 import { doneHint } from "./done.js";
 import {
   commitSubject,
@@ -144,8 +145,11 @@ export async function finishCommand(cwd, taskId, { createPr, squash, rebase, ins
       }
     }
 
-    if (!(await isClean(tree))) {
-      throw new DirtyTree("Working tree is not clean.");
+    const pending = await commitIfDirty(tree, taskId);
+    if (pending) {
+      const latest = loadTask(state, taskId);
+      task.commits = latest.commits;
+      task.status = latest.status;
     }
 
     const head = await revParse(tree, "HEAD");

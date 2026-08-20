@@ -4,7 +4,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { commitCommand } from "../src/commands/commit.js";
+import { commitCommand, commitIfDirty, pendingCommitMessage } from "../src/commands/commit.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
 import { DenylistHit, EmptyCommit, WrongBranch } from "../src/errors.js";
@@ -102,5 +102,25 @@ describe("commit", () => {
     const tracked = gitRun(tree, ["ls-tree", "-r", "--name-only", "HEAD"]);
     assert.match(tracked, /mine\.txt/);
     assert.doesNotMatch(tracked, /\.env/);
+  });
+
+  test("pendingCommitMessage names a single file or a count", () => {
+    assert.equal(pendingCommitMessage("AUTH-123", ["note.txt"]), "AUTH-123: update note.txt");
+    assert.equal(pendingCommitMessage("AUTH-123", ["a.txt", "b.txt"]), "AUTH-123: update 2 files");
+  });
+
+  test("commitIfDirty is a no-op on a clean tree", async () => {
+    const { tree } = await startedRepo();
+    assert.equal(await commitIfDirty(tree, "AUTH-123"), null);
+  });
+
+  test("commitIfDirty commits pending files", async () => {
+    const { tree } = await startedRepo();
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    writeFileSync(join(tree, "other.txt"), "more\n");
+
+    const result = await commitIfDirty(tree, "AUTH-123");
+    assert.deepEqual(result.files, ["note.txt", "other.txt"]);
+    assert.equal(gitRun(tree, ["log", "-1", "--pretty=%s"]).trim(), "AUTH-123: update 2 files");
   });
 });

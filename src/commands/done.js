@@ -15,6 +15,7 @@ import { inspectMergeRequest } from "../prhost.js";
 import { resolveTaskTree } from "../root.js";
 import { loadWorkspace } from "../store.js";
 import { assertTaskId, deleteTask, loadTask, taskExists } from "../taskstore.js";
+import { commitIfDirty } from "./commit.js";
 
 export function doneHint(taskId) {
   return `PR merged. Run: agit done ${taskId}`;
@@ -71,13 +72,15 @@ async function mergeAndDone(store, root, profile, task, cwd) {
   if (isPublished(task)) {
     throw new TaskStateError(
       `Task ${task.task_id} was already published.`,
-      `Merge the pull request on the host, then run agit done ${task.task_id}.`,
+      task.publish?.pr_url
+        ? `Merge the pull request on the host, then run agit done ${task.task_id}.`
+        : `Run agit done ${task.task_id} to remove the local worktree. The remote branch is left in place.`,
     );
   }
 
   const tree = resolveTaskTree(store, task, cwd);
-  if (existsSync(tree) && tree !== root && !(await isClean(tree))) {
-    throw new DirtyTree("Working tree is not clean.");
+  if (existsSync(tree) && tree !== root) {
+    await commitIfDirty(tree, task.task_id);
   }
   if (!(await isClean(root))) {
     throw new DirtyTree(
@@ -133,10 +136,14 @@ export async function doneCommand(
 
     if (!prUrl) {
       if (task.publish?.pushed || task.status === "pushed") {
-        throw new TaskStateError(
-          `Task ${taskId} was pushed without a pull request.`,
-          `Run agit finish ${taskId} to open one, then agit done ${taskId} after it is merged.`,
-        );
+        await cleanupTask(store, root, task, cwd);
+        return {
+          task_id: taskId,
+          branch: task.branch,
+          pr_url: null,
+          status: "done",
+          message: `Done ${taskId}. Local worktree and branch removed. Remote was not changed.`,
+        };
       }
       throw new TaskStateError(
         `Task ${taskId} was not published.`,
