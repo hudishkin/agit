@@ -74,7 +74,7 @@ npx agit finish <task-id>
 | edit this project's profile | `npx agit edit` |
 | see where you are | `npx agit status` / `npx agit status --all` |
 | drop an unpublished task | `npx agit abort <task-id>` |
-| land a task on its base branch | `npx agit done <task-id> --merge` |
+| land a task on a local branch | `npx agit done <task-id> --merge [branch]` |
 | remove a merged or no-PR published task | `npx agit done <task-id>` |
 
 ## If something fails
