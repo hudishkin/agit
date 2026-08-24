@@ -167,9 +167,9 @@ export function createProgram() {
   applyOutputOptions(
     program
       .command("done")
-      .description("Remove a local task worktree after merge or a no-PR push, or merge it into the base branch")
+      .description("Remove a local task worktree after merge or a no-PR push, or merge it into a chosen branch")
       .argument("[task-id]", "Task id, for example AUTH-123")
-      .option("--merge", "Commit pending task changes, merge into the start branch, then remove it")
+      .option("--merge [branch]", "Commit pending task changes, merge into BRANCH, then remove it")
       .option("--stale", "List stale local tasks instead of a single merged task")
       .option("--apply", "With --stale, delete candidates instead of listing them")
       .action(async (taskId, opts, command) => {
@@ -185,7 +185,7 @@ export function createProgram() {
             throw new AgitError({
               code: "error",
               message: "--merge cannot be combined with --stale.",
-              hint: "Run: agit done <task-id> --merge  or  agit done --stale",
+              hint: "Run: agit done <task-id> --merge <branch>  or  agit done --stale",
             });
           }
           if (opts.stale) {
@@ -195,10 +195,13 @@ export function createProgram() {
             throw new AgitError({
               code: "error",
               message: "Task id is required unless --stale is set.",
-              hint: "Run: agit done <task-id>  or  agit done <task-id> --merge  or  agit done --stale",
+              hint: "Run: agit done <task-id>  or  agit done <task-id> --merge <branch>  or  agit done --stale",
             });
           }
-          return doneCommand(cwdFrom(command), taskId, { merge: Boolean(opts.merge) });
+          return doneCommand(cwdFrom(command), taskId, {
+            merge: opts.merge ?? false,
+            interactive: Boolean(process.stdin.isTTY) && !command.optsWithGlobals().json,
+          });
         });
       }),
   );

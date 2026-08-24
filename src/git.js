@@ -125,6 +125,14 @@ export async function branchExists(cwd, name) {
   return result !== null;
 }
 
+export async function listLocalBranches(cwd) {
+  const output = await runGit(cwd, ["for-each-ref", "--format=%(refname:short)", "refs/heads/"]);
+  if (!output) {
+    return [];
+  }
+  return output.split("\n").filter(Boolean);
+}
+
 export async function deleteBranch(cwd, name) {
   if (!(await branchExists(cwd, name))) {
     return false;

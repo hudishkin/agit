@@ -12,6 +12,7 @@ import {
   currentBranch,
   defaultBranch,
   isClean,
+  listLocalBranches,
   isRepo,
   listCommitCandidates,
   localBranchFromRef,
@@ -63,6 +64,15 @@ describe("git", () => {
 
     await createBranch(work, "agit/AUTH-123", "main");
     assert.equal(await currentBranch(work), "agit/AUTH-123");
+  });
+
+  test("listLocalBranches returns local branch names", async () => {
+    const { work } = repo();
+    gitRun(work, ["branch", "develop"]);
+
+    const branches = await listLocalBranches(work);
+    assert.ok(branches.includes("main"));
+    assert.ok(branches.includes("develop"));
   });
 
   test("localBranchFromRef strips origin prefixes", () => {

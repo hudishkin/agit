@@ -201,7 +201,7 @@ describe("done --merge", () => {
     writeFileSync(join(tree, "note.txt"), "ok\n");
     await commitCommand(tree, "AUTH-123: add note");
 
-    const result = await doneCommand(created.work, "AUTH-123", { merge: true });
+    const result = await doneCommand(created.work, "AUTH-123", { merge: "main" });
 
     assert.equal(result.status, "done");
     assert.equal(result.base, "main");
@@ -218,7 +218,7 @@ describe("done --merge", () => {
     const { work } = await readyRepo();
     const started = await startCommand(work, "AUTH-123");
 
-    const result = await doneCommand(work, "AUTH-123", { merge: true });
+    const result = await doneCommand(work, "AUTH-123", { merge: "main" });
 
     assert.equal(result.status, "done");
     assert.equal(existsSync(started.path), false);
@@ -234,7 +234,7 @@ describe("done --merge", () => {
     await commitCommand(started.path, "AUTH-123: add note");
     gitRun(work, ["worktree", "remove", "--force", started.path]);
 
-    const result = await doneCommand(work, "AUTH-123", { merge: true });
+    const result = await doneCommand(work, "AUTH-123", { merge: "main" });
 
     assert.equal(result.status, "done");
     assert.equal(readFileSync(join(work, "note.txt"), "utf8"), "ok\n");
@@ -246,7 +246,7 @@ describe("done --merge", () => {
     await startCommand(work, "AUTH-123");
     writeFileSync(join(taskWork(work, "AUTH-123"), "note.txt"), "dirty\n");
 
-    const result = await doneCommand(work, "AUTH-123", { merge: true });
+    const result = await doneCommand(work, "AUTH-123", { merge: "main" });
 
     assert.equal(result.status, "done");
     assert.equal(readFileSync(join(work, "note.txt"), "utf8"), "dirty\n");
@@ -262,7 +262,7 @@ describe("done --merge", () => {
     await commitCommand(tree, "AUTH-123: add note");
     writeFileSync(join(work, "README.md"), "dirty main\n");
 
-    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: true }), /main checkout is not clean/);
+    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: "main" }), /main checkout is not clean/);
     assert.equal(await branchExists(work, "agit/AUTH-123"), true);
     assert.equal(taskExists(work, "AUTH-123"), true);
   });
@@ -270,7 +270,7 @@ describe("done --merge", () => {
   test("refuses a published task", async () => {
     const { work, tree } = await publishedTask();
 
-    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: true }), /already published/);
+    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: "main" }), /already published/);
     assert.equal(existsSync(tree), true);
     assert.equal(taskExists(work, "AUTH-123"), true);
   });
@@ -292,7 +292,7 @@ describe("done --merge", () => {
     );
 
     await assert.rejects(
-      () => doneCommand(work, "AUTH-123", { merge: true }),
+      () => doneCommand(work, "AUTH-123", { merge: "main" }),
       (error) => {
         assert.match(error.message, /already published/);
         assert.match(error.hint, /agit done AUTH-123/);
@@ -316,12 +316,72 @@ describe("done --merge", () => {
     writeFileSync(join(tree, "note.txt"), "from-task\n");
     await commitCommand(tree, "AUTH-123: add note");
 
-    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: true }), /Could not merge/);
+    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: "main" }), /Could not merge/);
     assert.equal(existsSync(tree), true);
     assert.equal(taskExists(work, "AUTH-123"), true);
     assert.equal(await branchExists(work, "agit/AUTH-123"), true);
     assert.equal(await currentBranch(work), "main");
     assert.equal(existsSync(join(work, "note.txt")), true);
     assert.equal(readFileSync(join(work, "note.txt"), "utf8"), "from-main\n");
+  });
+
+  test("merges into an explicit branch", async () => {
+    const { work } = await readyRepo();
+    gitRun(work, ["branch", "develop"]);
+    await startCommand(work, "AUTH-123");
+    const tree = taskWork(work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+
+    const result = await doneCommand(work, "AUTH-123", { merge: "develop" });
+
+    assert.equal(result.status, "done");
+    assert.equal(result.base, "develop");
+    assert.equal(await currentBranch(work), "develop");
+    assert.equal(readFileSync(join(work, "note.txt"), "utf8"), "ok\n");
+    gitRun(work, ["checkout", "main"]);
+    assert.equal(existsSync(join(work, "note.txt")), false);
+  });
+
+  test("asks for a branch when --merge has no name", async () => {
+    const { work } = await readyRepo();
+    gitRun(work, ["branch", "develop"]);
+    await startCommand(work, "AUTH-123");
+    const tree = taskWork(work, "AUTH-123");
+    writeFileSync(join(tree, "note.txt"), "ok\n");
+    await commitCommand(tree, "AUTH-123: add note");
+    let offered;
+
+    const result = await doneCommand(work, "AUTH-123", {
+      merge: true,
+      chooseBranch: (branches) => {
+        offered = branches;
+        return "develop";
+      },
+    });
+
+    assert.equal(result.base, "develop");
+    assert.deepEqual(offered.slice(0, 1), ["main"]);
+    assert.ok(offered.includes("develop"));
+    assert.equal(await currentBranch(work), "develop");
+  });
+
+  test("refuses --merge without a branch when not interactive", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+
+    await assert.rejects(
+      () => doneCommand(work, "AUTH-123", { merge: true, interactive: false }),
+      /merge target branch is required/,
+    );
+    assert.equal(await branchExists(work, "agit/AUTH-123"), true);
+  });
+
+  test("refuses an unknown merge branch", async () => {
+    const { work } = await readyRepo();
+    await startCommand(work, "AUTH-123");
+
+    await assert.rejects(() => doneCommand(work, "AUTH-123", { merge: "nope" }), /does not exist/);
+    assert.equal(await branchExists(work, "agit/AUTH-123"), true);
   });
 });

@@ -70,7 +70,7 @@ describe("agit cli", () => {
     assert.equal(result.status, 0);
     assert.match(result.stdout, /--stale/);
     assert.match(result.stdout, /--apply/);
-    assert.match(result.stdout, /--merge/);
+    assert.match(result.stdout, /--merge \[branch\]/);
   });
 
   test("done --merge --stale is rejected", () => {
