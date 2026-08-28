@@ -34,7 +34,7 @@ describe("profile and tasks", () => {
     assert.equal(loaded.workflow.finish, undefined);
     assert.equal(loaded.pr.provider, "github");
     assert.deepEqual(loaded.checks, ["npm test"]);
-    assert.ok(loaded.commit.denylist.includes(".env"));
+    assert.equal(loaded.commit.scope, "all");
     assert.equal(finishOf(loaded), "ask");
     assert.equal(finishChosen(loaded), false);
   });

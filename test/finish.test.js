@@ -9,7 +9,7 @@ import { commitCommand } from "../src/commands/commit.js";
 import { finishCommand } from "../src/commands/finish.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { ChecksFailed, DenylistHit, DirtyTree, PublishFailed, TaskStateError } from "../src/errors.js";
+import { ChecksFailed, DirtyTree, PublishFailed, TaskStateError } from "../src/errors.js";
 import { createDraftPr } from "../src/gh.js";
 import { createDraftMr } from "../src/prhost.js";
 import { currentBranch, isClean, logOneline } from "../src/git.js";
@@ -85,16 +85,6 @@ describe("finish", () => {
     assert.match(gitRun(tree, ["log", "-1", "--pretty=%s"]), /AUTH-123: update note\.txt/);
     assert.match(gitRun(created.origin, ["log", "agit/AUTH-123", "-1", "--pretty=%s"]), /note\.txt/);
     assert.equal(gh.calls.length, 1);
-  });
-
-  test("does not auto-commit denied files on finish", async () => {
-    const { work, tree, origin } = await readyTask();
-    writeFileSync(join(tree, ".env"), "SECRET=1\n");
-    const gh = fakePr();
-
-    await assert.rejects(() => finishCommand(work, "AUTH-123", gh), DenylistHit);
-    assert.doesNotMatch(gitRun(origin, ["branch"]), /AUTH-123/);
-    assert.equal(gh.calls.length, 0);
   });
 
   test("does not push when checks dirty the tree", async () => {

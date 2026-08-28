@@ -161,7 +161,7 @@ agit doctor --fix           Reinstall the pre-push hook and agent guards
 agit doctor --undo-isolate  Restore origin to the real remote (sandbox)
 ```
 
-Every command accepts `--json`. Protocol enforcement still accepts `agit commit` for denylist and secret-scan; it is not shown in `--help`.
+Every command accepts `--json`. Protocol enforcement still accepts `agit commit`; it is not shown in `--help`.
 
 ## Configuration
 
@@ -187,9 +187,6 @@ checks_timeout_sec: 900
 
 commit:
   scope: all              # or explicit, to require agit commit --files
-  denylist: [".env", ".env.*", "credentials.json", "*.pem", "*.p12"]
-  allowlist: ["*.example", "*.sample", "*.template", "*.dist"]
-  scan_contents: true
 ```
 
 `init --yes` without `--checks` looks at the repo (`package.json` scripts.test, pytest, cargo, go) and writes what it finds. Existing non-empty `checks` are left alone.

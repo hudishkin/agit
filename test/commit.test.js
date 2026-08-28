@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { commitCommand, commitIfDirty, pendingCommitMessage } from "../src/commands/commit.js";
 import { initCommand } from "../src/commands/init.js";
 import { startCommand } from "../src/commands/start.js";
-import { DenylistHit, EmptyCommit, WrongBranch } from "../src/errors.js";
+import { EmptyCommit, WrongBranch } from "../src/errors.js";
 import { loadTask } from "../src/taskstore.js";
 import { createGitRepo, gitRun, taskWork } from "./helpers/git-harness.js";
 
@@ -52,15 +52,6 @@ describe("commit", () => {
     await assert.rejects(() => commitCommand(tree, "AUTH-123: empty"), EmptyCommit);
   });
 
-  test("rejects .env and does not create a commit", async () => {
-    const { tree } = await startedRepo();
-    const head = gitRun(tree, ["rev-parse", "HEAD"]).trim();
-    writeFileSync(join(tree, ".env"), "SECRET=1\n");
-
-    await assert.rejects(() => commitCommand(tree, "AUTH-123: leak"), DenylistHit);
-    assert.equal(gitRun(tree, ["rev-parse", "HEAD"]).trim(), head);
-  });
-
   test("commits locally and does not push", async () => {
     const { work, tree, origin } = await startedRepo();
     writeFileSync(join(tree, "note.txt"), "ok\n");
@@ -93,15 +84,15 @@ describe("commit", () => {
   test("--files does not commit other staged paths", async () => {
     const { tree } = await startedRepo();
     writeFileSync(join(tree, "mine.txt"), "agent work\n");
-    writeFileSync(join(tree, ".env"), "SECRET=1\n");
-    gitRun(tree, ["add", ".env"]);
+    writeFileSync(join(tree, "other.txt"), "unrelated\n");
+    gitRun(tree, ["add", "other.txt"]);
 
     const result = await commitCommand(tree, "AUTH-123: add mine", { files: ["mine.txt"] });
 
     assert.deepEqual(result.files, ["mine.txt"]);
     const tracked = gitRun(tree, ["ls-tree", "-r", "--name-only", "HEAD"]);
     assert.match(tracked, /mine\.txt/);
-    assert.doesNotMatch(tracked, /\.env/);
+    assert.doesNotMatch(tracked, /other\.txt/);
   });
 
   test("pendingCommitMessage names a single file or a count", () => {

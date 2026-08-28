@@ -30,13 +30,6 @@ export class WrongBranch extends AgitError {
   }
 }
 
-export class DenylistHit extends AgitError {
-  constructor(message, hint = "Remove secret files from the change set and retry.", details = null) {
-    super({ code: "denylist_hit", message, hint, details, exitCode: 5 });
-    this.name = "DenylistHit";
-  }
-}
-
 export class ChecksFailed extends AgitError {
   constructor(message, hint = "Fix the errors and run agit finish again.", details = null) {
     super({ code: "checks_failed", message, hint, details, exitCode: 6 });
