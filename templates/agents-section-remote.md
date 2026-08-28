@@ -27,7 +27,7 @@ On the first start in a project, ask how publishing should work (default: always
 
 After the PR is merged, a human runs `agit done <task-id>` to remove the local worktree.
 
-To land a task locally instead of opening a PR, run `agit done <task-id> --merge <branch>`. If the branch is omitted, agit asks which local branch to merge into, then deletes the work branch.
+To land a task locally instead of opening a PR, run `agit done <task-id> --merge`. That creates a local branch named after the task, merges into it, and removes the worktree. Pass `--merge <branch>` to merge into an existing branch.
 
 If `agit` is not on PATH, use `npx agit`.
 

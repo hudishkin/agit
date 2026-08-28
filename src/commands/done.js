@@ -1,12 +1,11 @@
 import { existsSync } from "node:fs";
-import { createInterface } from "node:readline/promises";
 import { DirtyTree, TaskStateError } from "../errors.js";
 import {
   checkout,
+  createBranch,
   currentBranch,
   deleteBranch,
   isClean,
-  listLocalBranches,
   localBranchFromRef,
   mergeBranch,
   refExists,
@@ -27,49 +26,6 @@ function isPublished(task) {
   return Boolean(task.publish?.pushed || task.status === "pr_created" || task.status === "pushed");
 }
 
-export function orderBranchChoices(branches, preferred = []) {
-  const available = new Set(branches);
-  const seen = new Set();
-  const head = [];
-  for (const name of preferred.filter(Boolean)) {
-    if (available.has(name) && !seen.has(name)) {
-      seen.add(name);
-      head.push(name);
-    }
-  }
-  const rest = [...available].filter((name) => !seen.has(name)).sort();
-  return [...head, ...rest];
-}
-
-export async function promptMergeBranch(
-  branches,
-  { stdin = process.stdin, stdout = process.stdout, taskId } = {},
-) {
-  const header = taskId ? `Merge ${taskId} into which branch?` : "Merge into which branch?";
-  stdout.write(`${header}\n`);
-  branches.forEach((name, index) => {
-    stdout.write(`  ${index + 1}) ${name}\n`);
-  });
-
-  const rl = createInterface({ input: stdin, output: stdout });
-  try {
-    const answer = (await rl.question(`Branch [1-${branches.length}]: `)).trim();
-    const index = Number.parseInt(answer, 10);
-    if (String(index) === answer && index >= 1 && index <= branches.length) {
-      return branches[index - 1];
-    }
-    if (branches.includes(answer)) {
-      return answer;
-    }
-    throw new TaskStateError(
-      `Invalid branch choice: ${answer || "(empty)"}.`,
-      `Pick a number 1-${branches.length}, or a branch name from the list.`,
-    );
-  } finally {
-    rl.close();
-  }
-}
-
 async function assertMergeBranch(root, name) {
   const local = localBranchFromRef(name) || name;
   if ((await refExists(root, local)) || (await refExists(root, `origin/${local}`))) {
@@ -77,46 +33,59 @@ async function assertMergeBranch(root, name) {
   }
   throw new TaskStateError(
     `Branch ${name} does not exist.`,
-    "Pass a local branch name, or create it first.",
+    "Pass a local branch name, or omit the name to create one from the task id.",
   );
 }
 
-async function resolveMergeTarget(
-  root,
-  task,
-  profile,
-  { merge, chooseBranch, interactive, stdin, stdout },
-) {
+async function mergeStartPoint(root, task, profile) {
+  const candidates = [
+    profile.repo.default_branch,
+    `origin/${profile.repo.default_branch}`,
+    task.base_ref,
+    localBranchFromRef(task.base_ref),
+  ].filter(Boolean);
+  const seen = new Set();
+  for (const ref of candidates) {
+    if (seen.has(ref)) {
+      continue;
+    }
+    seen.add(ref);
+    if (await refExists(root, ref)) {
+      return ref;
+    }
+  }
+  return null;
+}
+
+async function resolveMergeTarget(root, task, profile, merge) {
   const named = typeof merge === "string" ? merge.trim() : "";
   if (named) {
     return assertMergeBranch(root, named);
   }
 
-  const preferred = [localBranchFromRef(task.base_ref), profile.repo.default_branch];
-  const available = (await listLocalBranches(root)).filter((name) => name !== task.branch);
-  const branches = orderBranchChoices(available, preferred);
-  if (branches.length === 0) {
+  const name = task.task_id;
+  if ((await refExists(root, name)) || (await refExists(root, `origin/${name}`))) {
+    return name;
+  }
+
+  const startPoint = await mergeStartPoint(root, task, profile);
+  if (!startPoint) {
     throw new TaskStateError(
-      `No local branch to merge ${task.task_id} into.`,
-      `Create the target branch, then run: agit done ${task.task_id} --merge <branch>`,
+      `Could not create branch ${name}.`,
+      `Pass an existing branch: agit done ${task.task_id} --merge <branch>`,
     );
   }
 
-  if (chooseBranch) {
-    return assertMergeBranch(root, await chooseBranch(branches));
-  }
-
-  if (!interactive) {
+  try {
+    await createBranch(root, name, startPoint);
+  } catch (error) {
     throw new TaskStateError(
-      "A merge target branch is required.",
-      `Run: agit done ${task.task_id} --merge <branch>`,
+      `Could not create branch ${name}.`,
+      `Pass an existing branch: agit done ${task.task_id} --merge <branch>`,
+      { error: error.message },
     );
   }
-
-  return assertMergeBranch(
-    root,
-    await promptMergeBranch(branches, { stdin, stdout, taskId: task.task_id }),
-  );
+  return name;
 }
 
 async function ensureOnBranch(cwd, name) {
@@ -144,7 +113,7 @@ async function cleanupTask(store, root, task, cwd) {
   deleteTask(store.dir, task.task_id);
 }
 
-async function mergeAndDone(store, root, profile, task, cwd, mergeOpts) {
+async function mergeAndDone(store, root, profile, task, cwd, merge) {
   if (isPublished(task)) {
     throw new TaskStateError(
       `Task ${task.task_id} was already published.`,
@@ -165,7 +134,7 @@ async function mergeAndDone(store, root, profile, task, cwd, mergeOpts) {
     );
   }
 
-  const target = await resolveMergeTarget(root, task, profile, mergeOpts);
+  const target = await resolveMergeTarget(root, task, profile, merge);
   await ensureOnBranch(root, target);
 
   const result = await mergeBranch(root, task.branch);
@@ -192,14 +161,7 @@ async function mergeAndDone(store, root, profile, task, cwd, mergeOpts) {
 export async function doneCommand(
   cwd,
   taskId,
-  {
-    inspectPr: inspect = inspectMergeRequest,
-    merge = false,
-    chooseBranch,
-    interactive = Boolean(process.stdin.isTTY),
-    stdin = process.stdin,
-    stdout = process.stdout,
-  } = {},
+  { inspectPr: inspect = inspectMergeRequest, merge = false } = {},
 ) {
   assertTaskId(taskId);
 
@@ -212,13 +174,7 @@ export async function doneCommand(
   return withTaskLock(state, taskId, async () => {
     const task = loadTask(state, taskId);
     if (merge) {
-      return mergeAndDone(store, root, profile, task, cwd, {
-        merge,
-        chooseBranch,
-        interactive,
-        stdin,
-        stdout,
-      });
+      return mergeAndDone(store, root, profile, task, cwd, merge);
     }
 
     const prUrl = task.publish?.pr_url ?? null;
@@ -236,7 +192,7 @@ export async function doneCommand(
       }
       throw new TaskStateError(
         `Task ${taskId} was not published.`,
-        `Run agit done ${taskId} --merge <branch> to land it on a local branch, or agit abort ${taskId} to drop it.`,
+        `Run agit done ${taskId} --merge to land it on a local branch, or agit abort ${taskId} to drop it.`,
       );
     }
 
