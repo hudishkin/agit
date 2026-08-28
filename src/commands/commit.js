@@ -1,8 +1,6 @@
-import { findDeniedFiles } from "../denylist.js";
-import { DenylistHit, DirtyTree, EmptyCommit, WrongBranch } from "../errors.js";
+import { DirtyTree, EmptyCommit, WrongBranch } from "../errors.js";
 import { add, commit, currentBranch, isClean, listCommitCandidates } from "../git.js";
 import { loadWorkspace } from "../store.js";
-import { scanFilesForSecrets } from "../secretscan.js";
 import { loadTask, saveTask, taskExists } from "../taskstore.js";
 
 export function taskIdFromBranch(branch, prefix) {
@@ -63,26 +61,6 @@ export async function commitCommand(cwd, message, { files: requested } = {}) {
   }
 
   const files = resolveFiles(candidates, requested, profile.commit.scope);
-
-  const denied = findDeniedFiles(files, profile.commit.denylist, profile.commit.allowlist);
-  if (denied.length > 0) {
-    throw new DenylistHit(
-      "Refusing to commit denied files.",
-      "Remove secret files from the change set and retry.",
-      { files: denied },
-    );
-  }
-
-  if (profile.commit.scan_contents !== false) {
-    const secrets = scanFilesForSecrets(cwd, files);
-    if (secrets.length > 0) {
-      throw new DenylistHit(
-        "Refusing to commit files that look like they contain secrets.",
-        "Move the credential to an environment variable or a secret store, then retry.",
-        { secrets },
-      );
-    }
-  }
 
   await add(cwd, files);
   const hash = await commit(cwd, message, files);

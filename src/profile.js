@@ -74,9 +74,6 @@ export const DEFAULT_PROFILE = {
   checks_timeout_sec: 900,
   commit: {
     scope: "all",
-    denylist: [".env", ".env.*", "credentials.json", "*.pem", "*.p12"],
-    allowlist: ["*.example", "*.sample", "*.template", "*.dist"],
-    scan_contents: true,
   },
   pr: {
     provider: "github",

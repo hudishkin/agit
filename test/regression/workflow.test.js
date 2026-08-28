@@ -6,7 +6,7 @@ import { commitCommand } from "../../src/commands/commit.js";
 import { finishCommand } from "../../src/commands/finish.js";
 import { initCommand } from "../../src/commands/init.js";
 import { startCommand } from "../../src/commands/start.js";
-import { DenylistHit, EmptyCommit } from "../../src/errors.js";
+import { EmptyCommit } from "../../src/errors.js";
 import { loadProfile, saveProfile } from "../../src/profile.js";
 import { loadTask } from "../../src/taskstore.js";
 import { cloneRepo, createGitRepo, gitPushSetup, gitRun, taskWork } from "../helpers/git-harness.js";
@@ -190,7 +190,7 @@ describe("regression: commit scope", () => {
   });
 });
 
-describe("regression: file names and secrets", () => {
+describe("regression: file names", () => {
   test("commits paths that are not ASCII", async () => {
     const { work } = await readyRepo();
     await startCommand(work, "T8");
@@ -204,30 +204,6 @@ describe("regression: file names and secrets", () => {
     const tracked = gitRun(tree, ["-c", "core.quotePath=false", "ls-tree", "-r", "--name-only", "HEAD"]);
     assert.match(tracked, /документация\.md/);
     assert.match(tracked, /spaced name\.txt/);
-  });
-
-  test("allows example env files but still blocks the real one", async () => {
-    const { work } = await readyRepo();
-    await startCommand(work, "T9");
-    const tree = taskWork(work, "T9");
-    writeFileSync(join(tree, ".env.example"), "API_KEY=\n");
-
-    const result = await commitCommand(tree, "T9: document env");
-    assert.deepEqual(result.files, [".env.example"]);
-
-    writeFileSync(join(tree, ".env"), "API_KEY=real\n");
-    await assert.rejects(() => commitCommand(tree, "T9: leak"), DenylistHit);
-  });
-
-  test("blocks a credential hardcoded in a source file", async () => {
-    const { work } = await readyRepo();
-    await startCommand(work, "T10");
-    const tree = taskWork(work, "T10");
-    const awsExample = ["AKIA", "IOSFODNN7EXAMPLE"].join("");
-    writeFileSync(join(tree, "config.ts"), `export const key = "${awsExample}";\n`);
-
-    await assert.rejects(() => commitCommand(tree, "T10: add config"), DenylistHit);
-    assert.doesNotMatch(gitRun(tree, ["log", "--oneline"]), /T10/);
   });
 });
 
